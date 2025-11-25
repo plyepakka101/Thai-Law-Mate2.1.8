@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { LawSection, UserNote, AppSettings } from '../types';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { LawSection, UserNote, AppSettings, TextHighlight } from '../types';
 import { getOriginalLaw, getBooks } from '../services/dataService';
-import { BookOpen, Edit, Save, Trash2, ExternalLink, Star, Share2, Volume2, Square, Scale, History, Search } from 'lucide-react';
+import { BookOpen, Edit, Save, Trash2, ExternalLink, Star, Share2, Volume2, Square, Scale, History, Search, Highlighter, X } from 'lucide-react';
 import { SECTION_REF_REGEX, thaiToArabic, createHighlightRegex } from '../utils/textUtils';
 import { DiffView } from './DiffView';
 
@@ -16,9 +17,10 @@ interface LawCardProps {
   searchQuery?: string;
 }
 
+type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'red';
+
 export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNote, onDeleteLaw, onNavigateToSection, officialUrl, searchQuery }) => {
   const [isEditingNote, setIsEditingNote] = useState(false);
-  // Explicitly check if note exists and has text
   const initialNoteText = (note && note.text) ? note.text : '';
   const [noteText, setNoteText] = useState(initialNoteText);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -32,9 +34,12 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
   const isLoopingRef = useRef(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
+  // Highlighting State
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, start: number, end: number } | null>(null);
+
   const isHighlighted = note?.isHighlighted || false;
 
-  // Cleanup TTS on unmount
   useEffect(() => {
     return () => {
       isLoopingRef.current = false;
@@ -42,7 +47,23 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
     };
   }, []);
 
-  // Styling classes based on settings
+  // Clear selection menu when clicking elsewhere
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (selectionMenu && contentRef.current && !contentRef.current.contains(e.target as Node)) {
+         // Check if clicking on the menu itself (which is rendered via Portal or just absolute)
+         // For simplicity, we check if the click target is inside the menu div
+         const menuEl = document.getElementById('highlight-menu');
+         if (menuEl && menuEl.contains(e.target as Node)) return;
+         
+         setSelectionMenu(null);
+         window.getSelection()?.removeAllRanges();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [selectionMenu]);
+
   const fontFamilyClass = settings.fontStyle === 'traditional' ? 'font-serif' : 'font-sans';
   
   const fontSizeClass = {
@@ -53,37 +74,28 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
       5: 'text-2xl leading-10'
   }[settings.fontSize] || 'text-base leading-7';
 
-  const handleSaveNote = () => {
+  const handleSaveNote = (overrideNoteText?: string, overrideHighlights?: TextHighlight[], overrideIsHighlighted?: boolean) => {
     onSaveNote({
       sectionId: law.id,
-      text: noteText,
+      text: overrideNoteText !== undefined ? overrideNoteText : noteText,
       updatedAt: Date.now(),
-      isHighlighted: isHighlighted
+      isHighlighted: overrideIsHighlighted !== undefined ? overrideIsHighlighted : isHighlighted,
+      textHighlights: overrideHighlights !== undefined ? overrideHighlights : note?.textHighlights
     });
-    setIsEditingNote(false);
+    if (overrideNoteText === undefined) setIsEditingNote(false);
   };
 
   const toggleHighlight = () => {
-      onSaveNote({
-          sectionId: law.id,
-          text: (note && note.text) ? note.text : '',
-          updatedAt: Date.now(),
-          isHighlighted: !isHighlighted
-      });
+      handleSaveNote(undefined, undefined, !isHighlighted);
   };
 
   const handleSearchDika = () => {
-      // Find book name
       const books = getBooks();
       const currentBook = books.find(b => b.id === law.bookId);
-      
-      // If book not found (e.g. custom), try to extract from category or default empty
       let lawName = currentBook ? currentBook.name : '';
       if (!lawName && law.category) {
           lawName = law.category.split(' > ')[0];
       }
-
-      // Open Google Search for Dika related to this section
       const query = `คำพิพากษาศาลฎีกา ${lawName} มาตรา ${thaiToArabic(law.sectionNumber)}`.trim().replace(/\s+/g, ' ');
       window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
   }
@@ -95,27 +107,22 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
     }
 
     if (isPlaying) {
-      // Stop playing
       isLoopingRef.current = false;
       window.speechSynthesis.cancel();
       setIsPlaying(false);
       return;
     }
 
-    // Start playing
     setIsPlaying(true);
     isLoopingRef.current = true;
 
     const speak = () => {
-        // Normalize numerals for better TTS pronunciation
         const cleanSection = thaiToArabic(law.sectionNumber);
         const textToRead = `มาตรา ${cleanSection} ${law.content}`;
         
         const utterance = new SpeechSynthesisUtterance(textToRead);
         utterance.lang = 'th-TH';
         utterance.rate = 1.0;
-
-        // Keep reference to prevent garbage collection
         utteranceRef.current = utterance;
 
         utterance.onend = () => {
@@ -128,20 +135,17 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
         };
 
         utterance.onerror = (e) => {
-            // Ignore errors caused by manual cancellation
             if (e.error === 'canceled' || e.error === 'interrupted') {
                 isLoopingRef.current = false;
                 setIsPlaying(false);
                 return;
             }
-            
-            console.error("TTS Error code:", e.error);
             isLoopingRef.current = false;
             setIsPlaying(false);
             utteranceRef.current = null;
         };
 
-        window.speechSynthesis.cancel(); // Safety clear
+        window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
     };
 
@@ -149,10 +153,8 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
   };
 
   const handleShare = async () => {
-    // Generate a clean link hash
     const cleanSection = thaiToArabic(law.sectionNumber).replace(/\s/g, '');
     const shareLink = `${window.location.origin}${window.location.pathname}#/?s=${cleanSection}`;
-
     const textToShare = `[Thai Law Mate]
 มาตรา ${law.sectionNumber} ${isHighlighted ? '⭐️' : ''}
 
@@ -170,7 +172,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
           url: shareLink,
         });
       } catch (err) {
-        // User cancelled or error
+        // User cancelled
       }
     } else {
       try {
@@ -182,93 +184,322 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
     }
   };
 
-  // Helper function to highlight text
-  const highlightText = (text: string, query: string): React.ReactNode => {
-    if (!query || !query.trim()) return text;
-    
-    const regex = createHighlightRegex(query);
-    if (!regex) return text;
+  // --- Text Selection & Highlighting Logic ---
 
-    const parts = text.split(regex);
-    return (
-      <>
-        {parts.map((part, i) => 
-          regex.test(part) ? (
-            <span key={i} className="bg-yellow-200 dark:bg-yellow-600 text-gray-900 dark:text-white rounded px-0.5">
-              {part}
-            </span>
-          ) : (
-            part
-          )
-        )}
-      </>
-    );
+  const handleTextSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      setSelectionMenu(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const container = contentRef.current;
+
+    if (!container || !container.contains(range.commonAncestorContainer)) {
+      setSelectionMenu(null);
+      return;
+    }
+
+    // Calculate offset relative to the law.content string
+    // This is complex because the rendered HTML contains nested spans for existing highlights/links.
+    // We iterate through all text nodes in the container to find our start/end.
+    
+    let start = 0;
+    let end = 0;
+    let foundStart = false;
+    let charCount = 0;
+
+    const walk = (node: Node) => {
+        if (foundStart && end > 0) return; // Done
+
+        if (node.nodeType === Node.TEXT_NODE) {
+            const textLen = node.textContent?.length || 0;
+            
+            if (!foundStart && node === range.startContainer) {
+                start = charCount + range.startOffset;
+                foundStart = true;
+            }
+            
+            if (foundStart && node === range.endContainer) {
+                end = charCount + range.endOffset;
+                return;
+            }
+            
+            charCount += textLen;
+        } else {
+            for (let i = 0; i < node.childNodes.length; i++) {
+                walk(node.childNodes[i]);
+            }
+        }
+    };
+
+    walk(container);
+
+    if (foundStart && end > start) {
+        const rect = range.getBoundingClientRect();
+        // Adjust for scrolling
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+        
+        // Position the menu above the selection
+        setSelectionMenu({
+            x: rect.left + scrollLeft + (rect.width / 2),
+            y: rect.top + scrollTop - 10,
+            start,
+            end
+        });
+    } else {
+        setSelectionMenu(null);
+    }
+  }, []);
+
+  const addHighlight = (color: HighlightColor) => {
+      if (!selectionMenu) return;
+      
+      const newHighlight: TextHighlight = {
+          start: selectionMenu.start,
+          end: selectionMenu.end,
+          color
+      };
+      
+      const currentHighlights = note?.textHighlights || [];
+      // Simple merge logic: if new highlight overlaps existing, we remove existing and add new. 
+      // A more complex logic could merge ranges, but for simplicity we overwrite intersections.
+      const updatedHighlights = currentHighlights.filter(h => 
+          !(h.start < newHighlight.end && h.end > newHighlight.start)
+      );
+      
+      updatedHighlights.push(newHighlight);
+      updatedHighlights.sort((a, b) => a.start - b.start); // Keep sorted
+
+      handleSaveNote(undefined, updatedHighlights);
+      setSelectionMenu(null);
+      window.getSelection()?.removeAllRanges();
   };
 
-  // Helper to parse links within a single paragraph string
-  const renderParagraphContent = (text: string) => {
-      const parts: (string | React.ReactNode)[] = [];
-      let lastIndex = 0;
-      const regex = new RegExp(SECTION_REF_REGEX.source, 'g'); 
-      let match;
+  const clearHighlightSelection = () => {
+      if (!selectionMenu) return;
+      
+      // Remove any highlights that intersect with the selection
+      const currentHighlights = note?.textHighlights || [];
+      const updatedHighlights = currentHighlights.filter(h => 
+          !(h.start < selectionMenu.end && h.end > selectionMenu.start)
+      );
+      
+      handleSaveNote(undefined, updatedHighlights);
+      setSelectionMenu(null);
+      window.getSelection()?.removeAllRanges();
+  };
 
-      while ((match = regex.exec(text)) !== null) {
-          if (match.index > lastIndex) {
-              parts.push(text.substring(lastIndex, match.index));
+  // --- Advanced Rendering Logic ---
+
+  // Helper to get background class
+  const getBgClass = (color: string) => {
+      switch(color) {
+          case 'yellow': return 'bg-yellow-200 dark:bg-yellow-700/50';
+          case 'green': return 'bg-green-200 dark:bg-green-700/50';
+          case 'blue': return 'bg-blue-200 dark:bg-blue-700/50';
+          case 'pink': return 'bg-pink-200 dark:bg-pink-700/50';
+          case 'red': return 'bg-red-200 dark:bg-red-700/50';
+          default: return 'bg-yellow-200 dark:bg-yellow-700/50';
+      }
+  };
+
+  const renderContentWithFeatures = () => {
+      const text = law.content;
+      const highlights = note?.textHighlights || [];
+      
+      // We need to chop the text into segments based on:
+      // 1. User Highlights
+      // 2. Search Matches
+      // 3. Section Links
+      // 4. Newlines (for paragraph breaks) - handled by pre-splitting? 
+      //    Actually, better to render as one flow but insert <br/> or split by \n afterwards.
+      //    Let's split by \n first to keep paragraph structure simple.
+
+      const paragraphs = text.split('\n');
+      let globalOffset = 0;
+
+      return paragraphs.map((paraText, pIndex) => {
+          if (paraText.trim().length === 0) {
+              globalOffset += 1; // Count the newline char
+              return null;
           }
           
-          const fullMatch = match[0];
-          const sectionNum = match[1];
+          const paraStart = globalOffset;
+          const paraEnd = globalOffset + paraText.length;
           
-          parts.push(
-              <span 
-                key={`${match.index}-${sectionNum}`}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if(onNavigateToSection) onNavigateToSection(sectionNum);
-                }}
-                className="text-law-600 dark:text-law-400 font-semibold cursor-pointer hover:underline decoration-law-400 hover:bg-law-50 dark:hover:bg-law-900/50 rounded px-0.5 transition-colors"
-              >
-                  {fullMatch}
-              </span>
-          );
+          // Define segment boundaries for this paragraph
+          interface Segment {
+              start: number;
+              end: number;
+              type: 'text' | 'highlight' | 'search' | 'link';
+              data?: any;
+          }
           
-          lastIndex = regex.lastIndex;
-      }
-      
-      if (lastIndex < text.length) {
-          parts.push(text.substring(lastIndex));
-      }
-      
-      // After parsing links, apply highlighting to the string parts
-      if (searchQuery && searchQuery.trim()) {
-          return parts.map(part => {
-              if (typeof part === 'string') {
-                  return highlightText(part, searchQuery);
-              }
-              return part;
-          });
-      }
+          let segments: Segment[] = [];
 
-      return parts.length > 0 ? parts : [text];
+          // 1. User Highlights
+          highlights.forEach(h => {
+              // Intersect highlight with paragraph range
+              const start = Math.max(h.start, paraStart);
+              const end = Math.min(h.end, paraEnd);
+              if (start < end) {
+                  segments.push({ start: start - paraStart, end: end - paraStart, type: 'highlight', data: h.color });
+              }
+          });
+
+          // 2. Search Query
+          if (searchQuery && searchQuery.trim()) {
+              const regex = createHighlightRegex(searchQuery);
+              if (regex) {
+                  let match;
+                  while ((match = regex.exec(paraText)) !== null) {
+                      segments.push({ 
+                          start: match.index, 
+                          end: match.index + match[0].length, 
+                          type: 'search' 
+                      });
+                  }
+              }
+          }
+
+          // 3. Section Links
+          const linkRegex = new RegExp(SECTION_REF_REGEX.source, 'g');
+          let match;
+          while ((match = linkRegex.exec(paraText)) !== null) {
+              segments.push({
+                  start: match.index,
+                  end: match.index + match[0].length,
+                  type: 'link',
+                  data: match[1] // section number
+              });
+          }
+
+          // Sort segments
+          segments.sort((a, b) => a.start - b.start);
+
+          // Resolve overlaps. Priority: User Highlight > Search > Link.
+          // Simplified: Flatten segments into a single timeline.
+          // Since we can't easily nest spans in a simple loop, we'll chop the string into smallest distinctive parts.
+          // However, user highlights are background, others are text color/decoration. They can coexist conceptually, 
+          // but physically nesting them is tricky. 
+          // Strategy: User Highlight is the container. Inside it, links/search matches happen.
+          
+          // Let's try a simpler "Points of Interest" approach.
+          const points = new Set<number>([0, paraText.length]);
+          segments.forEach(s => {
+              points.add(s.start);
+              points.add(s.end);
+          });
+          const sortedPoints = Array.from(points).sort((a, b) => a - b);
+          
+          const renderSegments: React.ReactNode[] = [];
+          
+          for (let i = 0; i < sortedPoints.length - 1; i++) {
+              const pStart = sortedPoints[i];
+              const pEnd = sortedPoints[i + 1];
+              const segmentText = paraText.substring(pStart, pEnd);
+              
+              // Determine active styles for this range
+              const activeHighlight = highlights.find(h => Math.max(h.start, paraStart + pStart) < Math.min(h.end, paraStart + pEnd));
+              const activeSearch = (searchQuery && searchQuery.trim()) ? segments.find(s => s.type === 'search' && s.start <= pStart && s.end >= pEnd) : undefined;
+              const activeLink = segments.find(s => s.type === 'link' && s.start <= pStart && s.end >= pEnd);
+
+              let element: React.ReactNode = segmentText;
+
+              // Link styling (Inner most)
+              if (activeLink) {
+                  element = (
+                      <span 
+                        className="text-law-600 dark:text-law-400 font-semibold cursor-pointer hover:underline decoration-law-400"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (onNavigateToSection) onNavigateToSection(activeLink.data);
+                        }}
+                      >
+                          {element}
+                      </span>
+                  );
+              }
+
+              // Search styling
+              if (activeSearch) {
+                  element = (
+                      <span className="bg-yellow-400/50 dark:bg-yellow-600/80 rounded px-0.5 text-black dark:text-white">
+                          {element}
+                      </span>
+                  );
+              }
+
+              // User Highlight (Outer most background)
+              if (activeHighlight) {
+                  element = (
+                      <span className={`${getBgClass(activeHighlight.color)} rounded-sm decoration-clone box-decoration-clone pb-0.5`}>
+                          {element}
+                      </span>
+                  );
+              }
+
+              renderSegments.push(<React.Fragment key={i}>{element}</React.Fragment>);
+          }
+
+          globalOffset += paraText.length + 1; // +1 for newline
+
+          return (
+            <p key={pIndex} className="indent-8 md:indent-10 mb-2 text-justify break-words whitespace-pre-wrap relative">
+                {pIndex === 0 && (
+                    <span className="font-bold inline mr-3">
+                     มาตรา {law.sectionNumber}
+                    </span>
+                )}
+                {renderSegments}
+            </p>
+          );
+      });
   };
 
-  const paragraphs = law.content.split('\n').filter(p => p.trim().length > 0);
-
-  // Safe check for displaying note content
   const hasNoteContent = note && note.text && note.text.length > 0;
 
   return (
     <div 
       id={`section-${law.id}`} 
-      className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-sm border overflow-hidden mb-6 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group/card 
+      className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-sm border overflow-visible mb-6 transition-all duration-300 hover:shadow-md group/card 
         ${isHighlighted 
             ? 'border-yellow-400 ring-1 ring-yellow-100 dark:border-yellow-500/50 dark:ring-yellow-900/20' 
             : 'border-gray-200 dark:border-gray-700'}`}
     >
       {/* Highlight Indicator Strip */}
       {isHighlighted && (
-          <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400 dark:bg-yellow-500"></div>
+          <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400 dark:bg-yellow-500 rounded-l-lg"></div>
+      )}
+
+      {/* Highlight Menu Popover */}
+      {selectionMenu && (
+          <div 
+            id="highlight-menu"
+            className="absolute z-50 flex items-center bg-gray-900 dark:bg-gray-700 rounded-full shadow-xl px-2 py-1.5 -translate-x-1/2 transform transition-all animate-in fade-in zoom-in duration-200"
+            style={{ 
+                left: selectionMenu.x - (contentRef.current?.getBoundingClientRect().left || 0), 
+                top: selectionMenu.y - (contentRef.current?.getBoundingClientRect().top || 0) - 40
+            }}
+          >
+              <div className="flex space-x-1">
+                  <button onClick={() => addHighlight('yellow')} className="w-6 h-6 rounded-full bg-yellow-400 hover:scale-110 transition-transform border-2 border-transparent hover:border-white"></button>
+                  <button onClick={() => addHighlight('green')} className="w-6 h-6 rounded-full bg-green-400 hover:scale-110 transition-transform border-2 border-transparent hover:border-white"></button>
+                  <button onClick={() => addHighlight('blue')} className="w-6 h-6 rounded-full bg-blue-400 hover:scale-110 transition-transform border-2 border-transparent hover:border-white"></button>
+                  <button onClick={() => addHighlight('pink')} className="w-6 h-6 rounded-full bg-pink-400 hover:scale-110 transition-transform border-2 border-transparent hover:border-white"></button>
+                  <div className="w-px h-4 bg-gray-600 mx-1 self-center"></div>
+                  <button onClick={clearHighlightSelection} className="p-1 text-gray-300 hover:text-red-400 hover:scale-110 transition-transform">
+                      <Trash2 size={14} />
+                  </button>
+                  <button onClick={() => { setSelectionMenu(null); window.getSelection()?.removeAllRanges(); }} className="p-1 text-gray-400 hover:text-white">
+                      <X size={14} />
+                  </button>
+              </div>
+              <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 dark:bg-gray-700 rotate-45"></div>
+          </div>
       )}
 
       {/* Minimal Header for Actions & Metadata */}
@@ -327,17 +558,12 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
                 <DiffView original={originalContent} modified={law.content} />
             </div>
         ) : (
-            <div className={`text-gray-900 dark:text-gray-100 ${fontSizeClass} ${fontFamilyClass}`}>
-            {paragraphs.map((paragraph, index) => (
-                <p key={index} className="indent-8 md:indent-10 mb-2 text-justify break-words whitespace-pre-wrap">
-                    {index === 0 && (
-                        <span className="font-bold inline mr-3">
-                        มาตรา {searchQuery ? highlightText(law.sectionNumber, searchQuery) : law.sectionNumber}
-                        </span>
-                    )}
-                    {renderParagraphContent(paragraph)}
-                </p>
-            ))}
+            <div 
+                ref={contentRef}
+                onMouseUp={handleTextSelection}
+                className={`text-gray-900 dark:text-gray-100 ${fontSizeClass} ${fontFamilyClass} selection:bg-law-200 dark:selection:bg-law-800`}
+            >
+                {renderContentWithFeatures()}
             </div>
         )}
 
@@ -411,7 +637,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
                     ยกเลิก
                   </button>
                   <button 
-                    onClick={handleSaveNote}
+                    onClick={() => handleSaveNote()}
                     className="bg-law-600 text-white text-sm px-4 py-1.5 rounded-md shadow-sm hover:bg-law-700 flex items-center space-x-1 transition-all hover:scale-105 active:scale-95"
                   >
                     <Save size={14} />

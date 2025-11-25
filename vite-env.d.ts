@@ -1,7 +1,8 @@
+/// <reference types="vite/client" />
 
-declare var process: {
-  env: {
+declare namespace NodeJS {
+  interface ProcessEnv {
     API_KEY: string;
     [key: string]: any;
   }
-};
+}

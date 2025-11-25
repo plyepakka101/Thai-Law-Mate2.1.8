@@ -8,11 +8,18 @@ export interface LawSection {
   bookId?: string; // e.g., 'crim', 'civil'
 }
 
+export interface TextHighlight {
+  start: number;
+  end: number;
+  color: 'yellow' | 'green' | 'blue' | 'pink' | 'red';
+}
+
 export interface UserNote {
   sectionId: string;
   text: string;
   updatedAt: number;
   isHighlighted?: boolean;
+  textHighlights?: TextHighlight[];
 }
 
 export interface SearchFilters {
