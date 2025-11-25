@@ -31,8 +31,8 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
   const hasChanges = law.isCustom && originalContent && originalContent !== law.content;
   
   // Refs for TTS management
-  const isLoopingRef = useRef(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const isLoopingRef = useRef(false);
 
   // Highlighting State
   const contentRef = useRef<HTMLDivElement>(null);
@@ -41,9 +41,24 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
   const isHighlighted = note?.isHighlighted || false;
   const hasTextHighlights = note?.textHighlights && note.textHighlights.length > 0;
 
+  // Stop TTS when law changes or component unmounts
   useEffect(() => {
+    window.speechSynthesis.cancel();
+    setIsPlaying(false);
+    isLoopingRef.current = false;
+  }, [law.id]);
+
+  useEffect(() => {
+    // Warm up voices
+    const loadVoices = () => {
+        window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
     return () => {
-      isLoopingRef.current = false;
       window.speechSynthesis.cancel();
     };
   }, []);
@@ -104,6 +119,59 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
       window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
   }
 
+  const startReading = useCallback(() => {
+    const cleanSection = thaiToArabic(law.sectionNumber);
+    // Remove citation brackets like [1] from speech
+    const cleanContent = law.content.replace(/\[\d+\]/g, '');
+    const textToRead = `มาตรา ${cleanSection}. ${cleanContent}`;
+    
+    const utterance = new SpeechSynthesisUtterance(textToRead);
+    utterance.lang = 'th-TH';
+    utterance.rate = 1.0; 
+
+    // Attempt to find a Thai voice
+    const voices = window.speechSynthesis.getVoices();
+    const thaiVoice = voices.find(v => v.lang === 'th-TH') || voices.find(v => v.lang.includes('th'));
+    if (thaiVoice) {
+        utterance.voice = thaiVoice;
+    }
+
+    utterance.onstart = () => {
+        setIsPlaying(true);
+    };
+
+    utterance.onend = () => {
+        if (isLoopingRef.current) {
+            startReading(); // Loop again
+        } else {
+            setIsPlaying(false);
+            utteranceRef.current = null;
+        }
+    };
+
+    utterance.onerror = (e: any) => {
+        // Filter out canceled/interrupted errors which are normal
+        if (e.error === 'canceled' || e.error === 'interrupted') {
+            setIsPlaying(false);
+            utteranceRef.current = null;
+            return;
+        }
+        
+        console.error('TTS Error:', e.error);
+        // Prevent alert loop
+        if (!isLoopingRef.current) {
+            alert(`เกิดข้อผิดพลาดในการอ่านออกเสียง: ${e.error}`);
+        }
+        
+        setIsPlaying(false);
+        utteranceRef.current = null;
+        isLoopingRef.current = false;
+    };
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }, [law]);
+
   const handlePlayTTS = () => {
     if (!('speechSynthesis' in window)) {
       alert('เบราว์เซอร์ของคุณไม่รองรับการอ่านออกเสียง');
@@ -114,46 +182,12 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
       isLoopingRef.current = false;
       window.speechSynthesis.cancel();
       setIsPlaying(false);
-      return;
+    } else {
+      // Stop any current speech before starting
+      window.speechSynthesis.cancel();
+      isLoopingRef.current = true;
+      startReading();
     }
-
-    setIsPlaying(true);
-    isLoopingRef.current = true;
-
-    const speak = () => {
-        const cleanSection = thaiToArabic(law.sectionNumber);
-        const textToRead = `มาตรา ${cleanSection} ${law.content}`;
-        
-        const utterance = new SpeechSynthesisUtterance(textToRead);
-        utterance.lang = 'th-TH';
-        utterance.rate = 1.0;
-        utteranceRef.current = utterance;
-
-        utterance.onend = () => {
-            if (isLoopingRef.current) {
-                speak();
-            } else {
-                setIsPlaying(false);
-                utteranceRef.current = null;
-            }
-        };
-
-        utterance.onerror = (e) => {
-            if (e.error === 'canceled' || e.error === 'interrupted') {
-                isLoopingRef.current = false;
-                setIsPlaying(false);
-                return;
-            }
-            isLoopingRef.current = false;
-            setIsPlaying(false);
-            utteranceRef.current = null;
-        };
-
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-    };
-
-    speak();
   };
 
   const handleShare = async () => {
