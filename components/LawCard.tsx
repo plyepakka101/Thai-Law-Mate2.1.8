@@ -422,7 +422,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
               >
                  <div className="flex items-start space-x-3">
                     <BookOpen className="text-yellow-700 dark:text-yellow-500 mt-1 flex-shrink-0" size={18} />
-                    <p className="text-yellow-900 dark:text-yellow-200 text-base font-sarabun leading-relaxed">{note.text}</p>
+                    <p className="text-yellow-900 dark:text-yellow-200 text-base font-sarabun leading-relaxed">{note?.text}</p>
                  </div>
                  <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-60 text-xs text-yellow-800 bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded font-sans transition-opacity">แก้ไข</span>
               </div>
