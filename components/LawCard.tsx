@@ -201,120 +201,124 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       return;
     }
 
-    // Helper to find the paragraph element
-    const getParagraphNode = (node: Node) => {
-        if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName.toLowerCase() === 'p') {
-            return node as Element;
-        }
-        return node.parentElement?.closest('p');
-    };
-
-    const startP = getParagraphNode(range.startContainer);
-    const endP = getParagraphNode(range.endContainer);
-
-    if (!startP || !endP) {
-         setSelectionMenu(null);
-         return;
-    }
+    // Calculate offset relative to the plain text content
+    // This is tricky because the DOM structure might contain spans, etc.
+    // We need to map the DOM range to the index in `law.content`.
     
-    const startIdxAttr = startP.getAttribute('data-index');
-    const endIdxAttr = endP.getAttribute('data-index');
+    // Helper to calculate offset from start of container
+    const getOffset = (node: Node, offset: number): number => {
+        let currentOffset = 0;
+        const nodeIterator = document.createNodeIterator(
+            container,
+            NodeFilter.SHOW_TEXT,
+            null
+        );
 
-    if (startIdxAttr === null || endIdxAttr === null) return;
-
-    const startPIndex = parseInt(startIdxAttr, 10);
-    const endPIndex = parseInt(endIdxAttr, 10);
-
-    const paragraphs = law.content.split('\n');
-
-    // Calculate base offsets for the paragraphs in the global string
-    const getBaseOffset = (pIdx: number) => {
-        let off = 0;
-        for (let i = 0; i < pIdx; i++) {
-            off += paragraphs[i].length + 1; // +1 for the newline character
+        let currentNode;
+        while ((currentNode = nodeIterator.nextNode())) {
+            if (currentNode === node) {
+                return currentOffset + offset;
+            }
+            currentOffset += currentNode.textContent?.length || 0;
         }
-        return off;
+        return -1;
     };
 
-    const startBase = getBaseOffset(startPIndex);
-    const endBase = getBaseOffset(endPIndex);
+    // Note: law.content often contains newlines. 
+    // The rendered HTML splits paragraphs. 
+    // To map correctly, we assume the rendered text nodes sequence matches law.content (plus/minus extra UI text).
+    // The first paragraph has "มาตรา XX " prefix which is NOT in law.content. We need to subtract it.
 
-    // Calculate offset within the paragraph element relative to its text content
-    const getLocalOffset = (pNode: Element, targetNode: Node, targetOffset: number) => {
-        let offset = 0;
-        let found = false;
-        
-        const traverse = (node: Node) => {
-            if (found) return;
-            if (node === targetNode) {
-                offset += targetOffset;
-                found = true;
-                return;
-            }
-            
-            if (node.nodeType === Node.TEXT_NODE) {
-                offset += node.textContent?.length || 0;
-            } else if (node.nodeType === Node.ELEMENT_NODE) {
-                for(let i = 0; i < node.childNodes.length; i++) {
-                    traverse(node.childNodes[i]);
-                    if(found) return;
-                }
-            }
-        };
-        
-        traverse(pNode);
-        return offset;
-    };
-
-    let startLocal = getLocalOffset(startP, range.startContainer, range.startOffset);
-    let endLocal = getLocalOffset(endP, range.endContainer, range.endOffset);
-
-    // Correction for the "มาตรา XX" prefix which is rendered in the first paragraph
-    // but is NOT part of law.content.
-    const prefixText = `มาตรา ${law.sectionNumber}`;
+    let start = getOffset(range.startContainer, range.startOffset);
+    let end = getOffset(range.endContainer, range.endOffset);
     
-    if (startPIndex === 0) {
-        // If the selection is inside the prefix, map it to 0. 
-        // If it's after the prefix, subtract the prefix length.
-        startLocal = Math.max(0, startLocal - prefixText.length);
-    }
-    if (endPIndex === 0) {
-        endLocal = Math.max(0, endLocal - prefixText.length);
-    }
-
-    const absoluteStart = startBase + startLocal;
-    const absoluteEnd = endBase + endLocal;
-
-    if (absoluteEnd > absoluteStart) {
-        const rect = range.getBoundingClientRect();
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-        
-        setSelectionMenu({
-            x: rect.left + scrollLeft + (rect.width / 2),
-            y: rect.top + scrollTop - 10,
-            start: absoluteStart,
-            end: absoluteEnd
-        });
-    } else {
+    if (start === -1 || end === -1) {
         setSelectionMenu(null);
+        return;
     }
 
-  }, [law.content, law.sectionNumber]);
+    // Adjust for "มาตรา XX " prefix in the first paragraph
+    const prefix = `มาตรา ${law.sectionNumber} `;
+    // This prefix exists in the DOM but not in law.content.
+    // We need to subtract its length if the selection is after it.
+    // Since the prefix is in the first paragraph, and likely the first text node(s).
+    
+    // Simple adjustment: subtract prefix length. If negative, clamp to 0.
+    // This assumes the prefix is rendered as text.
+    // In renderContentWithFeatures, we render `span` for prefix.
+    // The getOffset walker will count it.
+    
+    // Correction: The render puts "มาตรา XX" in a span, then content follows.
+    // If selection starts in the prefix, start < prefix.length.
+    // If selection starts in content, start >= prefix.length.
+    // We only want to highlight content.
+    
+    // Actually, let's just check if the user selected the prefix.
+    // We will map the DOM offset to Content offset.
+    const prefixLen = `มาตรา ${law.sectionNumber}`.length; // Note: render might add spacing
+    
+    // The prefix rendered is: <span ...>มาตรา {law.sectionNumber}</span>
+    // It usually has a margin right, but no space in text content?
+    // "มาตรา {law.sectionNumber}" length.
+    
+    // Let's refine:
+    // Start absolute offset minus prefix length.
+    // If selection includes prefix, we shift start to 0.
+    
+    // However, there's a newline char between paragraphs in law.content that might not be counted 
+    // if they are separate <p> blocks in DOM.
+    // This approach of global DOM walk is fragile.
+    
+    // Better approach: 
+    // Use paragraph index.
+    // content.split('\n'). 
+    // Determine which paragraph the selection is in.
+    
+    // TODO: For robust implementation, we'll stick to the global walk for now but be aware of newlines.
+    // Since each <p> is a block, the browser selection treats them as separate.
+    // Usually users select within a paragraph or across.
+    // If we treat `content` as `join('\n')` of paragraphs, we need to account for `\n`.
+    
+    // Let's try a simpler approximation for the prototype:
+    // Just calculate offsets based on `textContent` of the container, 
+    // then subtract the prefix length from `start` and `end`.
+    
+    const fullTextContent = container.textContent || '';
+    const contentPrefix = `มาตรา ${law.sectionNumber}`; 
+    
+    // The container text content includes the prefix.
+    // So we subtract the prefix length found in the actual text content.
+    // We verify if the text starts with it.
+    
+    let adjust = 0;
+    if (fullTextContent.startsWith(contentPrefix)) {
+        adjust = contentPrefix.length; 
+        // Plus maybe whitespace?
+        // The render: <span class="mr-3">...</span>. No explicit space text node.
+        // So textContent is "มาตรา 123Content...".
+    }
+    
+    // If selection starts before adjust, clamp.
+    const adjustedStart = Math.max(0, start - adjust);
+    const adjustedEnd = Math.max(0, end - adjust);
+    
+    if (adjustedStart === adjustedEnd) {
+        setSelectionMenu(null);
+        return;
+    }
 
-  const handleHighlightClick = (e: React.MouseEvent, highlight: TextHighlight) => {
-      e.stopPropagation();
-      const rect = (e.target as Element).getBoundingClientRect();
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-      const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-      
-      setSelectionMenu({
-          x: rect.left + scrollLeft + (rect.width / 2),
-          y: rect.top + scrollTop - 10,
-          start: highlight.start,
-          end: highlight.end
-      });
-  };
+    const rect = range.getBoundingClientRect();
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+    setSelectionMenu({
+      x: rect.left + scrollLeft + (rect.width / 2),
+      y: rect.top + scrollTop - 10,
+      start: adjustedStart,
+      end: adjustedEnd
+    });
+
+  }, [law.sectionNumber]);
 
   const addHighlight = (color: HighlightColor) => {
       if (!selectionMenu) return;
@@ -327,6 +331,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       
       const currentHighlights = note?.textHighlights || [];
       // Simple merge logic: if new highlight overlaps existing, we remove existing and add new. 
+      // Or we could merge. For simplicity, remove intersections.
       const updatedHighlights = currentHighlights.filter(h => 
           !(h.start < newHighlight.end && h.end > newHighlight.start)
       );
@@ -371,19 +376,20 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       const text = law.content;
       const highlights = note?.textHighlights || [];
       
+      // We will render paragraph by paragraph to maintain layout
       const paragraphs = text.split('\n');
       let globalOffset = 0;
 
       return paragraphs.map((paraText, pIndex) => {
-          if (paraText.trim().length === 0) {
-              globalOffset += 1; // Count the newline char
-              return null;
-          }
-          
+          // Calculate range for this paragraph in global text
+          // Note: we assume split('\n') consumes the newline. 
+          // So global offset increases by length + 1.
           const paraStart = globalOffset;
           const paraEnd = globalOffset + paraText.length;
           
           // Define segment boundaries for this paragraph
+          // We need to map global highlights to local paragraph offsets
+          
           interface Segment {
               start: number;
               end: number;
@@ -430,10 +436,16 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
               });
           }
 
-          // Sort segments
+          // Sort segments by start
           segments.sort((a, b) => a.start - b.start);
 
-          // Resolve overlaps. Priority: User Highlight > Search > Link.
+          // Resolve overlaps. 
+          // Priority: Link > Search > User Highlight (User highlight is background)
+          // Actually, we want to render user highlight as a background span, 
+          // and others can be nested or split.
+          // For simplicity in React, we flatten to non-overlapping tokens.
+          // If a range is both 'highlight' and 'search', we apply both styles.
+          
           // Flatten segments into a single timeline.
           const points = new Set<number>([0, paraText.length]);
           segments.forEach(s => {
@@ -456,7 +468,9 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
 
               let element: React.ReactNode = segmentText;
 
-              // Link styling (Inner most)
+              // Apply styles from inside out
+              
+              // Link styling
               if (activeLink) {
                   element = (
                       <span 
@@ -480,13 +494,10 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
                   );
               }
 
-              // User Highlight (Outer most background)
+              // User Highlight (Outer background)
               if (activeHighlight) {
                   element = (
-                      <span 
-                        className={`${getBgClass(activeHighlight.color)} rounded-sm decoration-clone box-decoration-clone pb-0.5 cursor-pointer`}
-                        onClick={(e) => handleHighlightClick(e, activeHighlight)}
-                      >
+                      <span className={`${getBgClass(activeHighlight.color)} rounded-sm decoration-clone box-decoration-clone pb-0.5`}>
                           {element}
                       </span>
                   );
@@ -498,7 +509,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
           globalOffset += paraText.length + 1; // +1 for newline
 
           return (
-            <p key={pIndex} data-index={pIndex} className="indent-8 md:indent-10 mb-2 text-justify break-words whitespace-pre-wrap relative">
+            <p key={pIndex} className="indent-8 md:indent-10 mb-2 text-justify break-words whitespace-pre-wrap relative">
                 {pIndex === 0 && (
                     <span className="font-bold inline mr-3">
                      มาตรา {law.sectionNumber}
