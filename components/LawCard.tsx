@@ -266,8 +266,21 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
         return offset;
     };
 
-    const startLocal = getLocalOffset(startP, range.startContainer, range.startOffset);
-    const endLocal = getLocalOffset(endP, range.endContainer, range.endOffset);
+    let startLocal = getLocalOffset(startP, range.startContainer, range.startOffset);
+    let endLocal = getLocalOffset(endP, range.endContainer, range.endOffset);
+
+    // Correction for the "มาตรา XX" prefix which is rendered in the first paragraph
+    // but is NOT part of law.content.
+    const prefixText = `มาตรา ${law.sectionNumber}`;
+    
+    if (startPIndex === 0) {
+        // If the selection is inside the prefix, map it to 0. 
+        // If it's after the prefix, subtract the prefix length.
+        startLocal = Math.max(0, startLocal - prefixText.length);
+    }
+    if (endPIndex === 0) {
+        endLocal = Math.max(0, endLocal - prefixText.length);
+    }
 
     const absoluteStart = startBase + startLocal;
     const absoluteEnd = endBase + endLocal;
@@ -287,7 +300,21 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
         setSelectionMenu(null);
     }
 
-  }, [law.content]);
+  }, [law.content, law.sectionNumber]);
+
+  const handleHighlightClick = (e: React.MouseEvent, highlight: TextHighlight) => {
+      e.stopPropagation();
+      const rect = (e.target as Element).getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+      
+      setSelectionMenu({
+          x: rect.left + scrollLeft + (rect.width / 2),
+          y: rect.top + scrollTop - 10,
+          start: highlight.start,
+          end: highlight.end
+      });
+  };
 
   const addHighlight = (color: HighlightColor) => {
       if (!selectionMenu) return;
@@ -300,7 +327,6 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       
       const currentHighlights = note?.textHighlights || [];
       // Simple merge logic: if new highlight overlaps existing, we remove existing and add new. 
-      // A more complex logic could merge ranges, but for simplicity we overwrite intersections.
       const updatedHighlights = currentHighlights.filter(h => 
           !(h.start < newHighlight.end && h.end > newHighlight.start)
       );
@@ -457,7 +483,10 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
               // User Highlight (Outer most background)
               if (activeHighlight) {
                   element = (
-                      <span className={`${getBgClass(activeHighlight.color)} rounded-sm decoration-clone box-decoration-clone pb-0.5`}>
+                      <span 
+                        className={`${getBgClass(activeHighlight.color)} rounded-sm decoration-clone box-decoration-clone pb-0.5 cursor-pointer`}
+                        onClick={(e) => handleHighlightClick(e, activeHighlight)}
+                      >
                           {element}
                       </span>
                   );
