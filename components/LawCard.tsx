@@ -201,58 +201,93 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       return;
     }
 
-    // Calculate offset relative to the law.content string
-    // This is complex because the rendered HTML contains nested spans for existing highlights/links.
-    // We iterate through all text nodes in the container to find our start/end.
+    // Helper to find the paragraph element
+    const getParagraphNode = (node: Node) => {
+        if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName.toLowerCase() === 'p') {
+            return node as Element;
+        }
+        return node.parentElement?.closest('p');
+    };
+
+    const startP = getParagraphNode(range.startContainer);
+    const endP = getParagraphNode(range.endContainer);
+
+    if (!startP || !endP) {
+         setSelectionMenu(null);
+         return;
+    }
     
-    let start = 0;
-    let end = 0;
-    let foundStart = false;
-    let charCount = 0;
+    const startIdxAttr = startP.getAttribute('data-index');
+    const endIdxAttr = endP.getAttribute('data-index');
 
-    const walk = (node: Node) => {
-        if (foundStart && end > 0) return; // Done
+    if (startIdxAttr === null || endIdxAttr === null) return;
 
-        if (node.nodeType === Node.TEXT_NODE) {
-            const textLen = node.textContent?.length || 0;
-            
-            if (!foundStart && node === range.startContainer) {
-                start = charCount + range.startOffset;
-                foundStart = true;
-            }
-            
-            if (foundStart && node === range.endContainer) {
-                end = charCount + range.endOffset;
+    const startPIndex = parseInt(startIdxAttr, 10);
+    const endPIndex = parseInt(endIdxAttr, 10);
+
+    const paragraphs = law.content.split('\n');
+
+    // Calculate base offsets for the paragraphs in the global string
+    const getBaseOffset = (pIdx: number) => {
+        let off = 0;
+        for (let i = 0; i < pIdx; i++) {
+            off += paragraphs[i].length + 1; // +1 for the newline character
+        }
+        return off;
+    };
+
+    const startBase = getBaseOffset(startPIndex);
+    const endBase = getBaseOffset(endPIndex);
+
+    // Calculate offset within the paragraph element relative to its text content
+    const getLocalOffset = (pNode: Element, targetNode: Node, targetOffset: number) => {
+        let offset = 0;
+        let found = false;
+        
+        const traverse = (node: Node) => {
+            if (found) return;
+            if (node === targetNode) {
+                offset += targetOffset;
+                found = true;
                 return;
             }
             
-            charCount += textLen;
-        } else {
-            for (let i = 0; i < node.childNodes.length; i++) {
-                walk(node.childNodes[i]);
+            if (node.nodeType === Node.TEXT_NODE) {
+                offset += node.textContent?.length || 0;
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                for(let i = 0; i < node.childNodes.length; i++) {
+                    traverse(node.childNodes[i]);
+                    if(found) return;
+                }
             }
-        }
+        };
+        
+        traverse(pNode);
+        return offset;
     };
 
-    walk(container);
+    const startLocal = getLocalOffset(startP, range.startContainer, range.startOffset);
+    const endLocal = getLocalOffset(endP, range.endContainer, range.endOffset);
 
-    if (foundStart && end > start) {
+    const absoluteStart = startBase + startLocal;
+    const absoluteEnd = endBase + endLocal;
+
+    if (absoluteEnd > absoluteStart) {
         const rect = range.getBoundingClientRect();
-        // Adjust for scrolling
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
         
-        // Position the menu above the selection
         setSelectionMenu({
             x: rect.left + scrollLeft + (rect.width / 2),
             y: rect.top + scrollTop - 10,
-            start,
-            end
+            start: absoluteStart,
+            end: absoluteEnd
         });
     } else {
         setSelectionMenu(null);
     }
-  }, []);
+
+  }, [law.content]);
 
   const addHighlight = (color: HighlightColor) => {
       if (!selectionMenu) return;
@@ -310,14 +345,6 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       const text = law.content;
       const highlights = note?.textHighlights || [];
       
-      // We need to chop the text into segments based on:
-      // 1. User Highlights
-      // 2. Search Matches
-      // 3. Section Links
-      // 4. Newlines (for paragraph breaks) - handled by pre-splitting? 
-      //    Actually, better to render as one flow but insert <br/> or split by \n afterwards.
-      //    Let's split by \n first to keep paragraph structure simple.
-
       const paragraphs = text.split('\n');
       let globalOffset = 0;
 
@@ -381,13 +408,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
           segments.sort((a, b) => a.start - b.start);
 
           // Resolve overlaps. Priority: User Highlight > Search > Link.
-          // Simplified: Flatten segments into a single timeline.
-          // Since we can't easily nest spans in a simple loop, we'll chop the string into smallest distinctive parts.
-          // However, user highlights are background, others are text color/decoration. They can coexist conceptually, 
-          // but physically nesting them is tricky. 
-          // Strategy: User Highlight is the container. Inside it, links/search matches happen.
-          
-          // Let's try a simpler "Points of Interest" approach.
+          // Flatten segments into a single timeline.
           const points = new Set<number>([0, paraText.length]);
           segments.forEach(s => {
               points.add(s.start);
@@ -448,7 +469,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
           globalOffset += paraText.length + 1; // +1 for newline
 
           return (
-            <p key={pIndex} className="indent-8 md:indent-10 mb-2 text-justify break-words whitespace-pre-wrap relative">
+            <p key={pIndex} data-index={pIndex} className="indent-8 md:indent-10 mb-2 text-justify break-words whitespace-pre-wrap relative">
                 {pIndex === 0 && (
                     <span className="font-bold inline mr-3">
                      มาตรา {law.sectionNumber}
