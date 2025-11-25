@@ -70,7 +70,7 @@ export const BOOKS: LawBook[] = [
     abbreviation: 'พ.ร.บ. ล้มละลาย',
     content: RAW_BANKRUPTCY,
     color: 'bg-emerald-600',
-    description: 'กระบวรการล้มละลายและการฟื้นฟูกิจการ',
+    description: 'กระบวนการล้มละลายและการฟื้นฟูกิจการ',
     sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/dWNDc0pxS3NteHBmaHJoTE9KakhKdz09',
     lastUpdated: '10 ก.พ. 2567'
   },
