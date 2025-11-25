@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { LawSection, UserNote, AppSettings } from '../types';
 import { getOriginalLaw, getBooks } from '../services/dataService';
@@ -344,7 +343,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
             className={`flex items-center space-x-1 text-sm px-3 py-1.5 rounded-md transition-all duration-200 hover:scale-105 active:scale-95 ${isEditingNote || note?.text ? 'text-law-700 bg-law-50 dark:text-law-300 dark:bg-law-900/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
           >
             <Edit size={16} />
-            <span>{note?.text ? 'แก้ไขโน้ต' : 'โน้ต'}</span>
+            <span>{(note && note.text) ? 'แก้ไขโน้ต' : 'โน้ต'}</span>
           </button>
 
           <button
@@ -386,8 +385,8 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
         </div>
 
         {/* Note Editor Area */}
-        {(isEditingNote || note?.text) && (
-          <div className={`mt-4 ${isEditingNote ? 'block' : note?.text ? 'block' : 'hidden'}`}>
+        {(isEditingNote || (note && note.text)) && (
+          <div className={`mt-4 ${isEditingNote ? 'block' : (note && note.text) ? 'block' : 'hidden'}`}>
             {isEditingNote ? (
               <div className="space-y-2">
                 <textarea
@@ -422,7 +421,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
               >
                  <div className="flex items-start space-x-3">
                     <BookOpen className="text-yellow-700 dark:text-yellow-500 mt-1 flex-shrink-0" size={18} />
-                    <p className="text-yellow-900 dark:text-yellow-200 text-base font-sarabun leading-relaxed">{note?.text}</p>
+                    <p className="text-yellow-900 dark:text-yellow-200 text-base font-sarabun leading-relaxed">{note ? note.text : ''}</p>
                  </div>
                  <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-60 text-xs text-yellow-800 bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded font-sans transition-opacity">แก้ไข</span>
               </div>
