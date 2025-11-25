@@ -1,4 +1,3 @@
-declare const process: any;
 
 import { GoogleGenAI } from "@google/genai";
 
