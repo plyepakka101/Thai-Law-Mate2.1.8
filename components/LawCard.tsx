@@ -47,6 +47,11 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
     };
   }, []);
 
+  // Sync noteText with prop changes
+  useEffect(() => {
+      setNoteText(note?.text || '');
+  }, [note]);
+
   // Clear selection menu when clicking elsewhere
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

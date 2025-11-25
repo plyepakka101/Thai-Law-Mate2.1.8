@@ -227,7 +227,12 @@ export const getNotes = (): Record<string, UserNote> => {
 
 export const saveNote = (note: UserNote) => {
   const notes = getNotes();
-  if (!note.text.trim() && !note.isHighlighted) {
+  
+  const hasText = note.text && note.text.trim().length > 0;
+  const hasHighlight = note.isHighlighted;
+  const hasTextHighlights = note.textHighlights && note.textHighlights.length > 0;
+
+  if (!hasText && !hasHighlight && !hasTextHighlights) {
     delete notes[note.sectionId];
   } else {
     notes[note.sectionId] = note;
