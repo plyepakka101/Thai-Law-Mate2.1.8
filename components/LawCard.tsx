@@ -18,7 +18,7 @@ interface LawCardProps {
 
 export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNote, onDeleteLaw, onNavigateToSection, officialUrl, searchQuery }) => {
   const [isEditingNote, setIsEditingNote] = useState(false);
-  const [noteText, setNoteText] = useState(note?.text || '');
+  const [noteText, setNoteText] = useState(note && note.text ? note.text : '');
   const [isPlaying, setIsPlaying] = useState(false);
   
   // Diff State
@@ -64,7 +64,7 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
   const toggleHighlight = () => {
       onSaveNote({
           sectionId: law.id,
-          text: note?.text || '',
+          text: note && note.text ? note.text : '',
           updatedAt: Date.now(),
           isHighlighted: !isHighlighted
       });
@@ -156,7 +156,7 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
 
 ${law.content}
 
-${(note?.text) ? `📝 โน้ตของฉัน:\n${note.text}\n` : ''}
+${(note && note.text) ? `📝 โน้ตของฉัน:\n${note.text}\n` : ''}
 🔗 ลิงก์: ${shareLink}
 ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
 
@@ -340,10 +340,10 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
         <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 font-sans">
           <button 
             onClick={() => setIsEditingNote(!isEditingNote)}
-            className={`flex items-center space-x-1 text-sm px-3 py-1.5 rounded-md transition-all duration-200 hover:scale-105 active:scale-95 ${isEditingNote || (note?.text) ? 'text-law-700 bg-law-50 dark:text-law-300 dark:bg-law-900/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+            className={`flex items-center space-x-1 text-sm px-3 py-1.5 rounded-md transition-all duration-200 hover:scale-105 active:scale-95 ${isEditingNote || (note && note.text) ? 'text-law-700 bg-law-50 dark:text-law-300 dark:bg-law-900/50' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
           >
             <Edit size={16} />
-            <span>{(note?.text) ? 'แก้ไขโน้ต' : 'โน้ต'}</span>
+            <span>{(note && note.text) ? 'แก้ไขโน้ต' : 'โน้ต'}</span>
           </button>
 
           <button
@@ -385,8 +385,8 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
         </div>
 
         {/* Note Editor Area */}
-        {(isEditingNote || (note?.text)) && (
-          <div className={`mt-4 ${isEditingNote ? 'block' : (note?.text) ? 'block' : 'hidden'}`}>
+        {(isEditingNote || (note && note.text)) && (
+          <div className={`mt-4 ${isEditingNote ? 'block' : (note && note.text) ? 'block' : 'hidden'}`}>
             {isEditingNote ? (
               <div className="space-y-2">
                 <textarea
@@ -399,7 +399,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
                   <button 
                     onClick={() => {
                         setIsEditingNote(false);
-                        setNoteText(note?.text || '');
+                        setNoteText(note && note.text ? note.text : '');
                     }}
                     className="text-gray-600 dark:text-gray-400 text-sm px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                   >
@@ -421,7 +421,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
               >
                  <div className="flex items-start space-x-3">
                     <BookOpen className="text-yellow-700 dark:text-yellow-500 mt-1 flex-shrink-0" size={18} />
-                    <p className="text-yellow-900 dark:text-yellow-200 text-base font-sarabun leading-relaxed">{note?.text || ''}</p>
+                    <p className="text-yellow-900 dark:text-yellow-200 text-base font-sarabun leading-relaxed">{note && note.text ? note.text : ''}</p>
                  </div>
                  <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-60 text-xs text-yellow-800 bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded font-sans transition-opacity">แก้ไข</span>
               </div>
