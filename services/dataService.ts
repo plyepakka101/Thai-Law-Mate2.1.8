@@ -30,7 +30,7 @@ export const BOOKS: LawBook[] = [
     abbreviation: 'ป.พ.พ.',
     content: RAW_CIVIL_CODE,
     color: 'bg-blue-500',
-    description: 'หนี้ สัญญา ทรัพย์สิน ครอบครัว มรดก',
+    description: 'นิติกรรม สัญญา หนี้ เอกเทศสัญญา ทรัพย์สิน ครอบครัว มรดก',
     sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/Qko1NGNVa1FhMG9hTTNGcU9sTGxydz09',
     lastUpdated: '10 ก.พ. 2567'
   },
@@ -40,7 +40,7 @@ export const BOOKS: LawBook[] = [
     abbreviation: 'ป.วิ.พ.',
     content: RAW_CIVIL_PROCEDURE,
     color: 'bg-indigo-500',
-    description: 'กระบวนการยุติธรรมทางแพ่ง',
+    description: 'กระบวนพิจารณาคดีแพ่ง',
     sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/VjZQcUR4VG1iVHZGS09TMUMvY2Vsdz09',
     lastUpdated: '10 ก.พ. 2567'
   },
@@ -50,7 +50,7 @@ export const BOOKS: LawBook[] = [
     abbreviation: 'ป.วิ.อ.',
     content: RAW_CRIMINAL_PROCEDURE,
     color: 'bg-orange-600',
-    description: 'กระบวนการยุติธรรมทางอาญา',
+    description: 'กระบวนพิจารณาคดีอาญา',
     sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/UVdzUTNzUFZlT3VBOEw2allVWTZxZz09',
     lastUpdated: '10 ก.พ. 2567'
   },
@@ -70,7 +70,7 @@ export const BOOKS: LawBook[] = [
     abbreviation: 'พ.ร.บ. ล้มละลาย',
     content: RAW_BANKRUPTCY,
     color: 'bg-emerald-600',
-    description: 'การจัดการหนี้สินและการฟื้นฟูกิจการ',
+    description: 'กระบวรการล้มละลายและการฟื้นฟูกิจการ',
     sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/dWNDc0pxS3NteHBmaHJoTE9KakhKdz09',
     lastUpdated: '10 ก.พ. 2567'
   },
@@ -80,7 +80,7 @@ export const BOOKS: LawBook[] = [
     abbreviation: 'ศาลแขวง',
     content: RAW_KWAENG,
     color: 'bg-teal-500',
-    description: 'อำนาจและวิธีพิจารณาของศาลแขวง',
+    description: 'กระบวนพิจารณาคดีอาญาศาลแขวง',
     sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/SUlSbFpqUG95RlJ6RDd2c3BKSXBWdz09',
     lastUpdated: '10 ก.พ. 2567'
   },
