@@ -1,13 +1,9 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const searchDika = async (sectionNumber: string, content: string): Promise<string> => {
-  if (!process.env.API_KEY) {
-    return "กรุณาตั้งค่า API Key เพื่อใช้งานฟีเจอร์ AI";
-  }
-
   try {
     const prompt = `
       บทบาท: คุณเป็นผู้เชี่ยวชาญด้านกฎหมายไทยและการค้นคว้าคำพิพากษาศาลฎีกา
