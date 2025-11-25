@@ -39,6 +39,7 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
   const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, start: number, end: number, isExisting?: boolean } | null>(null);
 
   const isHighlighted = note?.isHighlighted || false;
+  const hasTextHighlights = note?.textHighlights && note.textHighlights.length > 0;
 
   useEffect(() => {
     return () => {
@@ -204,7 +205,12 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       return Math.max(0, pOffset);
   };
 
-  const handleTextSelection = useCallback(() => {
+  const handleTextSelection = useCallback((e: React.MouseEvent) => {
+    // Prevent interfering with highlight click
+    if ((e.target as HTMLElement).closest('[data-highlight="true"]')) {
+        return;
+    }
+
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
       setSelectionMenu(null);
@@ -337,6 +343,12 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       window.getSelection()?.removeAllRanges();
   };
 
+  const clearAllHighlights = () => {
+      if(confirm('ต้องการลบไฮไลท์ทั้งหมดในมาตรานี้ใช่หรือไม่?')) {
+          handleSaveNote(undefined, []);
+      }
+  };
+
   // --- Advanced Rendering Logic ---
 
   const getBgClass = (color: string) => {
@@ -453,6 +465,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
               if (activeHighlight) {
                   element = (
                       <span 
+                        data-highlight="true"
                         className={`${getBgClass(activeHighlight.data.color)} rounded-sm decoration-clone box-decoration-clone pb-0.5 cursor-pointer hover:brightness-95 dark:hover:brightness-110`}
                         onClick={(e) => handleHighlightClick(e, activeHighlight.data.original)}
                       >
@@ -512,7 +525,7 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
                   {(selectionMenu.isExisting) && (
                     <>
                         <div className="w-px h-4 bg-gray-600 mx-1 self-center"></div>
-                        <button onClick={clearHighlightSelection} className="p-1 text-gray-300 hover:text-red-400 hover:scale-110 transition-transform">
+                        <button onClick={clearHighlightSelection} className="p-1 text-gray-300 hover:text-red-400 hover:scale-110 transition-transform" title="ลบไฮไลท์นี้">
                             <Trash2 size={14} />
                         </button>
                     </>
@@ -600,6 +613,17 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
             <Edit size={16} />
             <span>{hasNoteContent ? 'แก้ไขโน้ต' : 'โน้ต'}</span>
           </button>
+          
+          {hasTextHighlights && (
+            <button
+              onClick={clearAllHighlights}
+              className="flex items-center space-x-1 text-sm px-3 py-1.5 rounded-md text-gray-500 dark:text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-all duration-200 hover:scale-105 active:scale-95"
+              title="ลบไฮไลท์ทั้งหมด"
+            >
+              <Highlighter size={16} />
+              <span>ลบไฮไลท์</span>
+            </button>
+          )}
 
           <button
             onClick={handleSearchDika}
