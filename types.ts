@@ -51,6 +51,8 @@ export interface AppSettings {
   darkMode: boolean;
   fontSize: number; // 1-5
   fontStyle: FontStyle;
+  voiceURI?: string;
+  speakingRate?: number;
 }
 
 export interface LawBook {

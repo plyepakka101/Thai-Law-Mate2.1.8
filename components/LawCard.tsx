@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LawSection, UserNote, AppSettings, TextHighlight } from '../types';
 import { getOriginalLaw, getBooks } from '../services/dataService';
@@ -126,14 +125,26 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
     const textToRead = `มาตรา ${cleanSection}. ${cleanContent}`;
     
     const utterance = new SpeechSynthesisUtterance(textToRead);
-    utterance.lang = 'th-TH';
-    utterance.rate = 1.0; 
+    utterance.rate = settings.speakingRate || 1.0;
 
-    // Attempt to find a Thai voice
     const voices = window.speechSynthesis.getVoices();
-    const thaiVoice = voices.find(v => v.lang === 'th-TH') || voices.find(v => v.lang.includes('th'));
-    if (thaiVoice) {
-        utterance.voice = thaiVoice;
+    let selectedVoice = null;
+
+    // If user selected a specific voice, try to find it
+    if (settings.voiceURI) {
+        selectedVoice = voices.find(v => v.voiceURI === settings.voiceURI);
+    }
+
+    // If no specific voice selected or found, try to find a Thai voice
+    if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.lang === 'th-TH') || voices.find(v => v.lang.includes('th'));
+    }
+    
+    if (selectedVoice) {
+        utterance.voice = selectedVoice;
+    } else {
+        // If still no voice, leave it default (browser default) but set lang just in case
+        utterance.lang = 'th-TH';
     }
 
     utterance.onstart = () => {
@@ -170,7 +181,7 @@ export const LawCard: React.FC<LawCardProps> = ({ law, note, settings, onSaveNot
 
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-  }, [law]);
+  }, [law, settings.voiceURI, settings.speakingRate]);
 
   const handlePlayTTS = () => {
     if (!('speechSynthesis' in window)) {

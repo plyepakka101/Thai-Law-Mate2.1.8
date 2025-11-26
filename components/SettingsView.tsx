@@ -1,6 +1,5 @@
-
-import React, { useRef } from 'react';
-import { Download, Upload, Settings as SettingsIcon, Monitor, Cloud, HardDrive, Info } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Download, Upload, Settings as SettingsIcon, Monitor, Cloud, HardDrive, Info, Volume2 } from 'lucide-react';
 import { exportData, importData } from '../services/dataService';
 import { AppSettings } from '../types';
 
@@ -11,6 +10,21 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSettings }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+    };
+
+    loadVoices();
+    
+    // Some browsers load voices asynchronously
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
 
   const handleExport = () => {
     const data = exportData();
@@ -51,6 +65,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
   const updateSetting = (key: keyof AppSettings, value: any) => {
     onUpdateSettings({ ...settings, [key]: value });
   };
+
+  // Filter only Thai voices
+  const thaiVoices = voices.filter(v => v.lang.includes('th'));
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12 animate-in slide-in-from-right-4 duration-300">
@@ -107,7 +124,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
                     className={`p-4 rounded-xl border text-center transition-all font-serif relative ${settings.fontStyle === 'traditional' ? 'border-law-500 bg-law-50 dark:bg-law-900/30 text-law-700 dark:text-law-200 ring-1 ring-law-500' : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                  >
                     <div className="text-2xl mb-2">กขค</div>
-                    <div className="text-sm font-medium">TH Sarabun</div>
+                    <div className="text-sm font-medium">TH Sarabun New</div>
                     <div className="text-xs opacity-70">แบบราชการ</div>
                  </button>
               </div>
@@ -141,12 +158,70 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
         </div>
       </div>
 
+      {/* Text-to-Speech Settings */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center">
+              <Volume2 className="mr-2 text-law-600 dark:text-law-400" size={20} />
+              การอ่านออกเสียง (Text-to-Speech)
+           </h3>
+        </div>
+        
+        <div className="p-6 space-y-6">
+           {/* Voice Selection */}
+           <div>
+              <div className="text-base font-medium text-gray-900 dark:text-gray-100 mb-2">เสียงอ่าน (ภาษาไทย)</div>
+              <select
+                 value={settings.voiceURI || ''}
+                 onChange={(e) => updateSetting('voiceURI', e.target.value)}
+                 className="w-full p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-law-100 focus:border-law-500 outline-none transition-all"
+              >
+                 <option value="">อัตโนมัติ (แนะนำ)</option>
+                 {thaiVoices.map((voice) => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                       {voice.name}
+                    </option>
+                 ))}
+              </select>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                 แสดงเฉพาะเสียงที่รองรับภาษาไทยในอุปกรณ์ของคุณ
+              </div>
+           </div>
+
+           <hr className="border-gray-100 dark:border-gray-700" />
+
+           {/* Speaking Rate */}
+           <div>
+              <div className="flex justify-between mb-4">
+                 <div className="text-base font-medium text-gray-900 dark:text-gray-100">ความเร็วการอ่าน</div>
+                 <div className="text-sm font-bold text-law-600 dark:text-law-400 bg-law-50 dark:bg-law-900/50 px-2 py-0.5 rounded">
+                    {settings.speakingRate || 1.0}x
+                 </div>
+              </div>
+              <input 
+                 type="range" 
+                 min="0.5" 
+                 max="2.0" 
+                 step="0.1" 
+                 value={settings.speakingRate || 1.0}
+                 onChange={(e) => updateSetting('speakingRate', parseFloat(e.target.value))}
+                 className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-law-600"
+              />
+              <div className="flex justify-between mt-2 text-xs text-gray-400 font-sans px-1">
+                 <span>ช้า (0.5x)</span>
+                 <span>ปกติ (1.0x)</span>
+                 <span>เร็ว (2.0x)</span>
+              </div>
+           </div>
+        </div>
+      </div>
+
       {/* Data Management */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center">
             <HardDrive className="mr-2 text-law-600 dark:text-law-400" size={20} />
-            จัดการข้อมูล
+            จัดการข้อมูล (Backup & Restore)
           </h3>
         </div>
 
@@ -167,7 +242,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
                     <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-3">
                         <Download size={24} />
                     </div>
-                    <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">สำรองข้อมูล (Backup)</h4>
+                    <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">สำรองข้อมูล</h4>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 h-8">
                         ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์ .json เพื่อเก็บรักษาไว้
                     </p>
@@ -185,7 +260,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
                     <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full flex items-center justify-center mb-3">
                         <Upload size={24} />
                     </div>
-                    <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">กู้คืนข้อมูล (Restore)</h4>
+                    <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">กู้คืนข้อมูล</h4>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 h-8">
                         นำไฟล์ .json ที่เคยสำรองไว้ กลับเข้ามาในระบบ
                     </p>
@@ -209,7 +284,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
       </div>
       
       <div className="text-center text-xs text-gray-400 mt-8 pb-8">
-          Thai Law Mate v2.1.7
+          Thai Law Mate Version 2.1.8
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ export default defineConfig({
       // Remove includeAssets regarding local files since we use CDN
       manifest: {
         name: 'Thai Law Mate',
-        short_name: 'Law Mate',
+        short_name: 'Thai Law Mate',
         description: 'คู่มือกฎหมายไทยฉบับพกพา ค้นหาและบันทึกโน้ตได้ง่ายๆ',
         theme_color: '#0ea5e9',
         background_color: '#f8fafc',

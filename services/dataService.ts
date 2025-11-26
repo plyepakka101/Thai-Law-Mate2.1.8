@@ -290,7 +290,9 @@ export const getSettings = (): AppSettings => {
   return {
     darkMode: false,
     fontSize: 2,
-    fontStyle: 'modern'
+    fontStyle: 'modern',
+    voiceURI: '',
+    speakingRate: 1.0
   };
 };
 

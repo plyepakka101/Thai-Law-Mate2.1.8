@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { HashRouter } from 'react-router-dom';
 import { ViewState, LawSection, UserNote, AppSettings, LawBook } from './types';
