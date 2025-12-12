@@ -125,35 +125,70 @@ export const getLaws = (): LawSection[] => {
 
   const allLaws = Array.from(lawMap.values());
 
-  // Helper to parse section number string to a sortable value
-  const getVal = (s: string) => {
-      let clean = thaiToArabic(s); 
-      clean = clean.replace('/', '.'); 
+  // Helper to parse section number components for sorting
+  const parseSectionComponents = (s: string) => {
+      let clean = thaiToArabic(s).trim();
+      let main = 0;
+      let sub = 0;
+      let suffixVal = 0;
+
+      // Check for Thai suffixes
+      const suffixes = [
+        { key: 'ทวิ', val: 1 }, { key: 'ตรี', val: 2 }, { key: 'จัตวา', val: 3 },
+        { key: 'เบญจ', val: 4 }, { key: 'ฉ', val: 6 }, { key: 'สัตต', val: 7 },
+        { key: 'อัฏฐ', val: 8 }, { key: 'นว', val: 9 }, { key: 'ทศ', val: 10 }
+      ];
+
+      for (const suf of suffixes) {
+          if (clean.includes(suf.key)) {
+              suffixVal = suf.val;
+              // Remove suffix to parse the rest
+              clean = clean.replace(suf.key, '').trim();
+              break;
+          }
+      }
+
+      if (clean.includes('/')) {
+          const parts = clean.split('/');
+          const p0 = parseFloat(parts[0]);
+          const p1 = parseFloat(parts[1]);
+          main = isNaN(p0) ? 0 : p0;
+          sub = isNaN(p1) ? 0 : p1;
+      } else {
+          const p = parseFloat(clean);
+          main = isNaN(p) ? 0 : p;
+      }
       
-      if (clean.includes('ทวิ')) clean = clean.replace(' ทวิ', '.1'); 
-      if (clean.includes('ตรี')) clean = clean.replace(' ตรี', '.2');
-      if (clean.includes('จัตวา')) clean = clean.replace(' จัตวา', '.3');
-      if (clean.includes('เบญจ')) clean = clean.replace(' เบญจ', '.4');
-      
-      const match = clean.match(/(\d+(\.\d+)?)/);
-      return match ? parseFloat(match[0]) : 99999;
+      return { main, sub, suffixVal };
   };
 
   // Sort logic: Sort by Book Index first, then by Section Number
   return allLaws.sort((a, b) => {
       // Get book priority
-      const bookIndexA = BOOKS.findIndex(book => book.id === a.bookId) ?? 99;
-      const bookIndexB = BOOKS.findIndex(book => book.id === b.bookId) ?? 99;
+      const bookIndexA = BOOKS.findIndex(book => book.id === a.bookId);
+      const bookIndexB = BOOKS.findIndex(book => book.id === b.bookId);
+      
+      const idxA = bookIndexA === -1 ? 99 : bookIndexA;
+      const idxB = bookIndexB === -1 ? 99 : bookIndexB;
 
-      if (bookIndexA !== bookIndexB) {
-          return bookIndexA - bookIndexB;
+      if (idxA !== idxB) {
+          return idxA - idxB;
       }
       
       // If custom law without specific bookId, push to end or separate
       if (a.isCustom && !a.bookId) return 1;
       if (b.isCustom && !b.bookId) return -1;
 
-      return getVal(a.sectionNumber) - getVal(b.sectionNumber);
+      const valA = parseSectionComponents(a.sectionNumber);
+      const valB = parseSectionComponents(b.sectionNumber);
+
+      if (valA.main !== valB.main) {
+          return valA.main - valB.main;
+      }
+      if (valA.sub !== valB.sub) {
+          return valA.sub - valB.sub;
+      }
+      return valA.suffixVal - valB.suffixVal;
   });
 };
 
