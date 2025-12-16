@@ -185,10 +185,13 @@ export const getLaws = (): LawSection[] => {
       if (valA.main !== valB.main) {
           return valA.main - valB.main;
       }
-      if (valA.sub !== valB.sub) {
-          return valA.sub - valB.sub;
+      // Priority: Suffix > Sub-section
+      // This ensures 172 ทวิ (suffix 1) comes before 172 ตรี (suffix 2)
+      // And 172 ทวิ/1 (suffix 1, sub 1) comes after 172 ทวิ (suffix 1, sub 0) but before 172 ตรี (suffix 2)
+      if (valA.suffixVal !== valB.suffixVal) {
+          return valA.suffixVal - valB.suffixVal;
       }
-      return valA.suffixVal - valB.suffixVal;
+      return valA.sub - valB.sub;
   });
 };
 

@@ -122,15 +122,22 @@ export const parseLaws = (rawText: string, bookId: string, bookName: string): La
       let remainder = baseMatch[2];
 
       // Check if the remainder starts with a valid suffix (e.g. " ทวิ")
-      // We check for space + suffix + boundary
-      const suffixRegex = new RegExp(`^\\s+(${VALID_SUFFIXES.join('|')})(?:\\s+|$)`);
+      const suffixRegex = new RegExp(`^\\s+(${VALID_SUFFIXES.join('|')})`);
       const suffixMatch = remainder.match(suffixRegex);
 
       if (suffixMatch) {
         // It is a suffix, append to section number
-        sectionNum += suffixMatch[0].trimEnd(); 
+        const suffix = suffixMatch[0];
+        sectionNum += suffix.trimEnd(); 
         // Remove suffix from remainder
-        remainder = remainder.substring(suffixMatch[0].length);
+        remainder = remainder.substring(suffix.length);
+        
+        // Check for sub-section (e.g. /๑) immediately after suffix
+        const subMatch = remainder.match(/^(\/[๐-๙\d]+)/);
+        if (subMatch) {
+             sectionNum += subMatch[1];
+             remainder = remainder.substring(subMatch[1].length);
+        }
       }
 
       currentSectionNumber = sectionNum;
