@@ -28,7 +28,9 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ books, laws, onSelectBook 
           const count = getLawCount(book.id);
           // Extract Tailwind color class to build specific class strings
           // Assuming book.color is like 'bg-red-500'
-          const colorClass = book.color || 'bg-gray-500';
+          const isHex = book.color?.startsWith('#');
+          const colorClass = isHex ? '' : (book.color || 'bg-gray-500');
+          const colorStyle = isHex ? { backgroundColor: book.color } : {};
           
           return (
             <button
@@ -36,10 +38,10 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ books, laws, onSelectBook 
               onClick={() => onSelectBook(book.id)}
               className="relative group flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm hover:shadow-xl border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden text-left h-full transform hover:-translate-y-1"
             >
-              <div className={`h-2 w-full ${colorClass}`} />
+              <div className={`h-2 w-full ${colorClass}`} style={colorStyle} />
               
               <div className="p-6 flex-1 flex flex-row items-start space-x-4">
-                 <div className={`w-12 h-16 rounded-md shadow-sm flex-shrink-0 flex items-center justify-center text-white font-bold text-xs ${colorClass} bg-opacity-90`}>
+                 <div className={`w-12 h-16 rounded-md shadow-sm flex-shrink-0 flex items-center justify-center text-white font-bold text-xs ${colorClass} bg-opacity-90`} style={colorStyle}>
                     <span className="transform -rotate-90 whitespace-nowrap">{book.abbreviation}</span>
                  </div>
                  

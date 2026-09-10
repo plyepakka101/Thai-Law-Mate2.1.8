@@ -26,13 +26,63 @@ const CUSTOM_LAWS_KEY = 'thai_law_mate_custom_laws';
 const CUSTOM_BOOKS_KEY = 'thai_law_mate_custom_books';
 const NOTES_KEY = 'thai_law_mate_notes';
 const SETTINGS_KEY = 'thai_law_mate_settings';
+const NEON_STATUS_KEY = 'thai_law_mate_neon_status';
 
 const readJson = <T,>(key: string, fallback: T): T => {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; }
 };
 
+// Listeners for background data updates
+type SyncListener = () => void;
+const syncListeners: Set<SyncListener> = new Set();
+export const onDataSynced = (listener: SyncListener) => {
+  syncListeners.add(listener);
+  return () => syncListeners.delete(listener);
+};
+const notifyListeners = () => syncListeners.forEach(l => l());
+
+const BOOK_COLORS_OVERRIDE_KEY = 'thai_law_mate_book_colors_override';
+
+export const getBookColorOverrides = (): Record<string, string> => readJson<Record<string, string>>(BOOK_COLORS_OVERRIDE_KEY, {});
+
+export const updateBookColor = (bookId: string, newColor: string): LawBook | undefined => {
+  const overrides = getBookColorOverrides();
+  overrides[bookId] = newColor;
+  localStorage.setItem(BOOK_COLORS_OVERRIDE_KEY, JSON.stringify(overrides));
+
+  // If it's a custom book, also update in custom books array
+  const customBooks = getCustomBooks();
+  const customIdx = customBooks.findIndex(b => b.id === bookId);
+  if (customIdx >= 0) {
+    customBooks[customIdx].color = newColor;
+    localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(customBooks));
+  }
+
+  const allBooks = getBooks();
+  const book = allBooks.find(b => b.id === bookId);
+  if (book) {
+    book.color = newColor;
+    // Async sync to Neon
+    fetch('/api/books', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(book)
+    }).catch(e => console.warn('Neon sync book color warning:', e));
+  }
+
+  notifyListeners();
+  return book;
+};
+
 export const getCustomBooks = (): LawBook[] => readJson<LawBook[]>(CUSTOM_BOOKS_KEY, []);
-export const getBooks = (): LawBook[] => [...BOOKS, ...getCustomBooks()];
+export const getBooks = (): LawBook[] => {
+  const overrides = getBookColorOverrides();
+  const all = [...BOOKS, ...getCustomBooks()];
+  return all.map(b => ({
+    ...b,
+    color: overrides[b.id] || b.color || 'bg-law-600'
+  }));
+};
 
 export const saveCustomBook = (book: LawBook): LawBook => {
   const books = getCustomBooks();
@@ -47,12 +97,23 @@ export const saveCustomBook = (book: LawBook): LawBook => {
   const index = books.findIndex(b => b.id === normalized.id);
   if (index >= 0) books[index] = normalized; else books.push(normalized);
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(books));
+
+  // Async sync to Neon
+  fetch('/api/books', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(normalized)
+  }).catch(e => console.warn('Neon sync book warning:', e));
+
   return normalized;
 };
 
 export const deleteCustomBook = (bookId: string) => {
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(getCustomBooks().filter(b => b.id !== bookId)));
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.bookId !== bookId)));
+
+  // Async delete from Neon
+  fetch(`/api/books?id=${encodeURIComponent(bookId)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete book warning:', e));
 };
 
 export const getOriginalLaw = (id: string): LawSection | undefined => INITIAL_LAWS.find(l => l.id === id);
@@ -94,27 +155,58 @@ export const saveCustomLaw = (law: LawSection | Omit<LawSection, 'id'>) => {
   const index = customLaws.findIndex(l => l.id === id);
   if (index >= 0) customLaws[index] = newLaw; else customLaws.push(newLaw);
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(customLaws));
+
+  // Async sync to Neon
+  fetch('/api/laws', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newLaw)
+  }).catch(e => console.warn('Neon sync law warning:', e));
+
   return newLaw;
 };
 
 export const restoreOriginalLaw = (id: string) => {
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.id !== id)));
+  fetch(`/api/laws?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete law warning:', e));
 };
 export const deleteCustomLaw = (id: string) => restoreOriginalLaw(id);
 
 export const getNotes = (): Record<string, UserNote> => readJson<Record<string, UserNote>>(NOTES_KEY, {});
 export const saveNote = (note: UserNote) => {
   const notes = getNotes();
-  if (!note.text?.trim() && !note.isHighlighted && !(note.textHighlights?.length)) delete notes[note.sectionId];
-  else notes[note.sectionId] = note;
+  if (!note.text?.trim() && !note.isHighlighted && !(note.textHighlights?.length)) {
+    delete notes[note.sectionId];
+    fetch(`/api/notes?sectionId=${encodeURIComponent(note.sectionId)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete note warning:', e));
+  } else {
+    notes[note.sectionId] = note;
+    fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note)
+    }).catch(e => console.warn('Neon sync note warning:', e));
+  }
   localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   return notes;
 };
 
 export const getSettings = (): AppSettings => readJson<AppSettings>(SETTINGS_KEY, { darkMode: false, fontSize: 2, fontStyle: 'modern' });
-export const saveSettings = (settings: AppSettings) => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+export const saveSettings = (settings: AppSettings) => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings)
+  }).catch(e => console.warn('Neon sync settings warning:', e));
+};
 
-export const exportData = (): string => JSON.stringify({ version: 3, timestamp: Date.now(), notes: getNotes(), customLaws: readJson<LawSection[]>(CUSTOM_LAWS_KEY, []), customBooks: getCustomBooks() }, null, 2);
+export const exportData = (): string => JSON.stringify({ 
+  version: 3, 
+  timestamp: Date.now(), 
+  notes: getNotes(), 
+  customLaws: readJson<LawSection[]>(CUSTOM_LAWS_KEY, []), 
+  customBooks: getCustomBooks() 
+}, null, 2);
 
 export const importData = (jsonString: string): boolean => {
   try {
@@ -123,6 +215,9 @@ export const importData = (jsonString: string): boolean => {
     if (data.notes) localStorage.setItem(NOTES_KEY, JSON.stringify(data.notes));
     if (Array.isArray(data.customLaws)) localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(data.customLaws));
     if (Array.isArray(data.customBooks)) localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(data.customBooks));
+    
+    // Automatically trigger sync to Neon after import
+    syncToNeon().catch(e => console.warn('Auto sync after import warning:', e));
     return true;
   } catch { return false; }
 };
@@ -132,3 +227,110 @@ export const resetData = () => {
   localStorage.removeItem(CUSTOM_LAWS_KEY);
   localStorage.removeItem(CUSTOM_BOOKS_KEY);
 };
+
+// =====================================================================
+// Neon Database Cloud Sync & Health
+// =====================================================================
+
+export interface NeonStatus {
+  connected: boolean;
+  message?: string;
+  stats?: {
+    books: number;
+    sections: number;
+    notes: number;
+  };
+  lastChecked?: number;
+}
+
+export const getCachedNeonStatus = (): NeonStatus => {
+  return readJson<NeonStatus>(NEON_STATUS_KEY, { connected: false, message: 'ยังไม่ได้ตรวจสอบการเชื่อมต่อ' });
+};
+
+export const checkNeonStatus = async (): Promise<NeonStatus> => {
+  try {
+    const res = await fetch('/api/sync', { method: 'GET' });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const status: NeonStatus = { connected: false, message: errData.error || `HTTP ${res.status}`, lastChecked: Date.now() };
+      localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
+      return status;
+    }
+    const data = await res.json();
+    const status: NeonStatus = {
+      connected: Boolean(data.connected),
+      stats: data.stats,
+      message: data.connected ? 'เชื่อมต่อฐานข้อมูล Neon สำเร็จ' : (data.message || 'ไม่ได้ตั้งค่า DATABASE_URL'),
+      lastChecked: Date.now()
+    };
+    localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
+    return status;
+  } catch (error) {
+    const status: NeonStatus = {
+      connected: false,
+      message: 'ออฟไลน์ หรือยังไม่ได้เชื่อมต่อ API',
+      lastChecked: Date.now()
+    };
+    localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
+    return status;
+  }
+};
+
+export const syncToNeon = async (): Promise<{ success: boolean; message: string; details?: any }> => {
+  try {
+    const payload = {
+      books: getCustomBooks(),
+      laws: readJson<LawSection[]>(CUSTOM_LAWS_KEY, []),
+      notes: getNotes(),
+      settings: getSettings()
+    };
+
+    const res = await fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, message: err.error || `ซิงค์ไม่สำเร็จ (HTTP ${res.status})` };
+    }
+
+    const result = await res.json();
+    return { 
+      success: true, 
+      message: 'ซิงค์ข้อมูลขึ้น Neon สำเร็จแล้ว', 
+      details: result.synced 
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ' 
+    };
+  }
+};
+
+// Initial background sync on app load
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    try {
+      const status = await checkNeonStatus();
+      if (status.connected) {
+        // Fetch latest notes from Neon
+        const notesRes = await fetch('/api/notes');
+        if (notesRes.ok) {
+          const remoteNotes = await notesRes.json();
+          if (remoteNotes && typeof remoteNotes === 'object') {
+            const localNotes = getNotes();
+            // Merge remote notes with local notes (remote updates overwrite older local notes)
+            const merged = { ...localNotes, ...remoteNotes };
+            localStorage.setItem(NOTES_KEY, JSON.stringify(merged));
+            notifyListeners();
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Background Neon sync status check:', e);
+    }
+  }, 1000);
+}

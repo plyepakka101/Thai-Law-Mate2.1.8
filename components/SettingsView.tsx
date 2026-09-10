@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Settings as SettingsIcon, Monitor, Cloud, HardDrive, Info, Volume2 } from 'lucide-react';
-import { exportData, importData } from '../services/dataService';
+import { Download, Upload, Settings as SettingsIcon, Monitor, Cloud, HardDrive, Info, Volume2, Database, RefreshCw, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { exportData, importData, checkNeonStatus, syncToNeon, getCachedNeonStatus, NeonStatus } from '../services/dataService';
 import { AppSettings } from '../types';
 
 interface SettingsViewProps {
@@ -11,6 +11,13 @@ interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSettings }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [neonStatus, setNeonStatus] = useState<NeonStatus>(getCachedNeonStatus());
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkNeonStatus().then(status => setNeonStatus(status));
+  }, []);
 
   useEffect(() => {
     const loadVoices = () => {
@@ -64,6 +71,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
 
   const updateSetting = (key: keyof AppSettings, value: any) => {
     onUpdateSettings({ ...settings, [key]: value });
+  };
+
+  const handleCheckNeon = async () => {
+    setSyncMessage('กำลังตรวจสอบการเชื่อมต่อกับ Neon...');
+    const status = await checkNeonStatus();
+    setNeonStatus(status);
+    setSyncMessage(status.message || (status.connected ? 'เชื่อมต่อสำเร็จ' : 'ยังไม่ได้เชื่อมต่อ'));
+    setTimeout(() => setSyncMessage(null), 4000);
+  };
+
+  const handleSyncToNeon = async () => {
+    setSyncing(true);
+    setSyncMessage('กำลังซิงค์ข้อมูลขึ้น Neon...');
+    const res = await syncToNeon();
+    setSyncing(false);
+    setSyncMessage(res.message);
+    if (res.success) {
+      const status = await checkNeonStatus();
+      setNeonStatus(status);
+    }
+    setTimeout(() => setSyncMessage(null), 5000);
   };
 
   // Filter only Thai voices
@@ -213,6 +241,82 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
                  <span>เร็ว (2.0x)</span>
               </div>
            </div>
+        </div>
+      </div>
+
+      {/* Neon Serverless PostgreSQL Cloud Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center">
+            <Database className="mr-2 text-emerald-600 dark:text-emerald-400" size={20} />
+            ฐานข้อมูลบนคลาวด์ Neon (PostgreSQL)
+          </h3>
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${neonStatus.connected ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+            <span className={`w-2 h-2 rounded-full ${neonStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}></span>
+            {neonStatus.connected ? 'เชื่อมต่อแล้ว' : 'ออฟไลน์ / Local'}
+          </span>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <div className="text-sm text-gray-600 dark:text-gray-300">
+            ระบบเชื่อมต่อกับ <strong>Neon Serverless PostgreSQL</strong> เพื่อจัดเก็บเล่มกฎหมาย มาตรา และบันทึกส่วนตัวอย่างปลอดภัย ข้อมูลไม่สูญหายแม้ล้างแคชหรือเปลี่ยนเครื่อง
+          </div>
+
+          {neonStatus.stats && (
+            <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl text-center">
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">เล่มกฎหมาย</div>
+                <div className="text-lg font-bold text-law-600 dark:text-law-400">{neonStatus.stats.books}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">มาตราในระบบ</div>
+                <div className="text-lg font-bold text-law-600 dark:text-law-400">{neonStatus.stats.sections}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">บันทึกบนคลาวด์</div>
+                <div className="text-lg font-bold text-law-600 dark:text-law-400">{neonStatus.stats.notes}</div>
+              </div>
+            </div>
+          )}
+
+          {syncMessage && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-lg flex items-center gap-2">
+              <Info size={16} />
+              <span>{syncMessage}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <button
+              onClick={handleCheckNeon}
+              className="py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={16} />
+              <span>ตรวจสอบการเชื่อมต่อ</span>
+            </button>
+
+            <button
+              onClick={handleSyncToNeon}
+              disabled={syncing}
+              className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {syncing ? <RefreshCw size={16} className="animate-spin" /> : <Cloud size={16} />}
+              <span>{syncing ? 'กำลังซิงค์...' : 'ซิงค์ข้อมูลในเครื่องขึ้น Neon'}</span>
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-500">
+            <span>จัดการแดชบอร์ดโครงการ</span>
+            <a
+              href="https://console.neon.tech/app/org-lucky-dream-51929614/projects"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-law-600 dark:text-law-400 hover:underline flex items-center gap-1"
+            >
+              <span>เปิด Neon Console</span>
+              <ExternalLink size={12} />
+            </a>
+          </div>
         </div>
       </div>
 
