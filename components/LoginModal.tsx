@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, UserCircle, AlertCircle, CheckCircle2, KeyRound, Settings } from 'lucide-react';
+import { X, UserCircle, AlertCircle, CheckCircle2, KeyRound, Settings, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import { 
   loginWithGoogleCredential, 
+  loginWithGmail,
   getStoredGoogleClientId, 
   setStoredGoogleClientId, 
   getAdminEmails,
@@ -21,6 +22,9 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
   const [showConfig, setShowConfig] = useState(false);
   const [inputClientId, setInputClientId] = useState(clientId);
   const [isGsiLoaded, setIsGsiLoaded] = useState(false);
+  const [copiedOrigin, setCopiedOrigin] = useState(false);
+  const [passcode, setPasscode] = useState('');
+  const [showPasscodeForm, setShowPasscodeForm] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,6 +108,26 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
     setErrorMsg('');
   };
 
+  const handleCopyOrigin = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://thai-law-mate2-1-8.vercel.app';
+    navigator.clipboard.writeText(origin);
+    setCopiedOrigin(true);
+    setTimeout(() => setCopiedOrigin(false), 2000);
+  };
+
+  const handlePasscodeLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const adminEmail = getAdminEmails()[0];
+    const res = loginWithGmail(adminEmail, passcode);
+    if (res.success && res.user) {
+      setSuccessMsg(`เข้าสู่ระบบแอดมินสำเร็จ (${res.user.name})`);
+      if (onSuccess) onSuccess(res.user);
+      setTimeout(() => onClose(), 400);
+    } else {
+      setErrorMsg(res.message || 'รหัสผ่านไม่ถูกต้อง');
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -174,36 +198,94 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           </div>
         )}
 
-        {/* Config drawer */}
+        {/* Origin Mismatch Helper & Config */}
         {showConfig && (
-          <form onSubmit={handleSaveClientId} className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block">
-              Google Client ID:
-            </label>
-            <input
-              type="text"
-              value={inputClientId}
-              onChange={(e) => setInputClientId(e.target.value)}
-              placeholder="xxxx.apps.googleusercontent.com"
-              className="w-full px-2.5 py-1.5 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-law-500"
-              required
-            />
-            <div className="flex justify-end gap-2 pt-1">
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            {/* Origin Helper */}
+            <div className="bg-blue-50 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800/50 text-xs space-y-1.5">
+              <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center justify-between">
+                <span>URL ต้นทาง (Authorized JavaScript origins):</span>
+              </div>
+              <div className="flex items-center justify-between bg-white dark:bg-slate-800 px-2 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 font-mono text-[11px] text-blue-800 dark:text-blue-300">
+                <span className="truncate">{typeof window !== 'undefined' ? window.location.origin : 'https://thai-law-mate2-1-8.vercel.app'}</span>
+                <button
+                  type="button"
+                  onClick={handleCopyOrigin}
+                  className="ml-2 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-sans flex items-center gap-1 shrink-0"
+                >
+                  <Copy size={10} />
+                  <span>{copiedOrigin ? 'คัดลอกแล้ว!' : 'คัดลอก'}</span>
+                </button>
+              </div>
+              <a
+                href="https://console.cloud.google.com/apis/credentials"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium pt-0.5"
+              >
+                <span>เปิดหน้า Credentials ใน Google Cloud Console</span>
+                <ExternalLink size={11} />
+              </a>
+            </div>
+
+            {/* Client ID Form */}
+            <form onSubmit={handleSaveClientId} className="space-y-2">
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block">
+                Google Client ID:
+              </label>
+              <input
+                type="text"
+                value={inputClientId}
+                onChange={(e) => setInputClientId(e.target.value)}
+                placeholder="xxxx.apps.googleusercontent.com"
+                className="w-full px-2.5 py-1.5 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-law-500"
+                required
+              />
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowConfig(false)}
+                  className="px-3 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+                >
+                  ปิด
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-1 text-xs bg-law-600 hover:bg-law-700 text-white font-medium rounded-md"
+                >
+                  บันทึก Client ID
+                </button>
+              </div>
+            </form>
+
+            {/* Quick Passcode Fallback for Admin */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => setShowConfig(false)}
-                className="px-3 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+                onClick={() => setShowPasscodeForm(!showPasscodeForm)}
+                className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline"
               >
-                ยกเลิก
+                {showPasscodeForm ? 'ซ่อนรหัสสำรอง' : 'เข้าระบบด่วนด้วยรหัสผ่านแอดมิน (กรณีรอ Google Sync)'}
               </button>
-              <button
-                type="submit"
-                className="px-3 py-1 text-xs bg-law-600 hover:bg-law-700 text-white font-medium rounded-md"
-              >
-                บันทึก
-              </button>
+              {showPasscodeForm && (
+                <form onSubmit={handlePasscodeLogin} className="mt-2 space-y-2">
+                  <input
+                    type="password"
+                    value={passcode}
+                    onChange={(e) => setPasscode(e.target.value)}
+                    placeholder="ใส่รหัสผ่านแอดมินสำรอง"
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-law-500"
+                  />
+                  <button
+                    type="submit"
+                    className="w-full py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-medium"
+                  >
+                    ยืนยันเข้าสู่ระบบ
+                  </button>
+                </form>
+              )}
             </div>
-          </form>
+          </div>
         )}
 
         <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
@@ -214,7 +296,7 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
             className="hover:text-law-600 dark:hover:text-law-400 flex items-center gap-1"
           >
             <Settings size={12} />
-            <span>ตั้งค่า</span>
+            <span>ตั้งค่า / แก้ปัญหา 400</span>
           </button>
         </div>
       </div>
