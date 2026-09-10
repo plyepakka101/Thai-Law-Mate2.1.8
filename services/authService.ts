@@ -10,6 +10,16 @@ export interface AuthUser {
 
 const AUTH_USER_KEY = 'thai_law_mate_auth_user';
 const ADMIN_EMAILS_KEY = 'thai_law_mate_admin_emails';
+const GOOGLE_CLIENT_ID_KEY = 'thai_law_mate_google_client_id';
+
+export const getStoredGoogleClientId = (): string => {
+  return localStorage.getItem(GOOGLE_CLIENT_ID_KEY) || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+};
+
+export const setStoredGoogleClientId = (clientId: string) => {
+  localStorage.setItem(GOOGLE_CLIENT_ID_KEY, clientId.trim());
+  window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
+};
 
 // Default Admin Emails (matching Deka Search project)
 export const DEFAULT_ADMIN_EMAILS = [
