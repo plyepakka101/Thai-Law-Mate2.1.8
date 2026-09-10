@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, ShieldCheck, LogOut, User, Mail, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
-import { getCurrentUser, loginWithGmail, loginWithGoogleCredential, logout, isUserAdmin, AuthUser, DEFAULT_ADMIN_EMAILS } from '../services/authService';
+import { Lock, ShieldCheck, LogOut, User, Mail, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getCurrentUser, loginWithGmail, loginWithGoogleCredential, logout, isUserAdmin, AuthUser } from '../services/authService';
 
 interface Props {
   children: React.ReactNode;
@@ -58,19 +58,6 @@ export const AdminLoginGuard: React.FC<Props> = ({ children, onClose }) => {
       }
     }
   }, []);
-
-  const handleQuickLogin = (email: string) => {
-    setIsBusy(true);
-    setErrorMsg('');
-    const res = loginWithGmail(email);
-    setIsBusy(false);
-    if (res.success && res.user) {
-      setUser(res.user);
-      setSuccessMsg(`เข้าสู่ระบบสำเร็จในฐานะ ${res.user.email}`);
-    } else {
-      setErrorMsg(res.message || 'เข้าสู่ระบบไม่สำเร็จ');
-    }
-  };
 
   const handleManualLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,35 +152,9 @@ export const AdminLoginGuard: React.FC<Props> = ({ children, onClose }) => {
       {/* Google Sign-In Container */}
       <div id="google-signin-btn-container" className="flex justify-center mb-4 min-h-[44px]"></div>
 
-      {/* Quick Admin Selection */}
-      <div className="space-y-3 mb-6">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center">
-          เข้าสู่ระบบด้วยบัญชีแอดมินที่กำหนด
-        </div>
-        {DEFAULT_ADMIN_EMAILS.map((adminEmail) => (
-          <button
-            key={adminEmail}
-            onClick={() => handleQuickLogin(adminEmail)}
-            disabled={isBusy}
-            className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-law-500 hover:bg-law-50 dark:hover:bg-law-900/20 text-left flex items-center justify-between transition-all group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/30 text-red-500 flex items-center justify-center font-bold text-sm">
-                G
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{adminEmail}</div>
-                <div className="text-[11px] text-gray-400">ผู้ดูแลระบบที่ได้รับอนุญาต</div>
-              </div>
-            </div>
-            <ArrowRight size={16} className="text-gray-400 group-hover:text-law-600 transition-transform group-hover:translate-x-1" />
-          </button>
-        ))}
-      </div>
-
       <div className="relative flex py-2 items-center mb-4">
         <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
-        <span className="flex-shrink mx-3 text-xs text-gray-400">หรือระบุ Gmail อื่น</span>
+        <span className="flex-shrink mx-3 text-xs text-gray-400">หรือระบุ Gmail ของผู้ดูแลระบบ</span>
         <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
       </div>
 
