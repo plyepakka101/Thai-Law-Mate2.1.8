@@ -229,18 +229,6 @@ export const AdminLoginGuard: React.FC<Props> = ({ children }) => {
         </div>
       )}
 
-      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-        <span>อีเมลแอดมิน: {getAdminEmails()[0]}</span>
-        <button 
-          type="button" 
-          onClick={() => setShowConfigModal(true)}
-          className="hover:text-law-600 dark:hover:text-law-400 flex items-center gap-1"
-        >
-          <Settings size={12} />
-          <span>ตั้งค่า Client ID</span>
-        </button>
-      </div>
-
       {showConfigModal && renderClientIdModal()}
     </div>
   );

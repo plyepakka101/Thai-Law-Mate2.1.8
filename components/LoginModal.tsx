@@ -288,17 +288,6 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           </div>
         )}
 
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-          <span>แอดมิน: {getAdminEmails()[0]}</span>
-          <button 
-            type="button" 
-            onClick={() => setShowConfig(!showConfig)}
-            className="hover:text-law-600 dark:hover:text-law-400 flex items-center gap-1"
-          >
-            <Settings size={12} />
-            <span>ตั้งค่า / แก้ปัญหา 400</span>
-          </button>
-        </div>
       </div>
     </div>
   );
