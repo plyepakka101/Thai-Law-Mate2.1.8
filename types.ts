@@ -1,11 +1,10 @@
-
 export interface LawSection {
   id: string;
-  sectionNumber: string; // e.g., "1", "288"
+  sectionNumber: string;
   content: string;
-  category?: string; // e.g., "ประมวลกฎหมายอาญา > ภาค 1 บทบัญญัติทั่วไป"
+  category?: string;
   isCustom?: boolean;
-  bookId?: string; // e.g., 'crim', 'civil'
+  bookId?: string;
 }
 
 export interface TextHighlight {
@@ -34,6 +33,7 @@ export enum ViewState {
   NOTES = 'NOTES',
   HIGHLIGHTS = 'HIGHLIGHTS',
   ADD = 'ADD',
+  MANAGE = 'MANAGE',
   SETTINGS = 'SETTINGS',
   TOC = 'TOC'
 }
@@ -43,13 +43,14 @@ export interface BackupData {
   timestamp: number;
   notes: Record<string, UserNote>;
   customLaws: LawSection[];
+  customBooks?: LawBook[];
 }
 
 export type FontStyle = 'modern' | 'traditional';
 
 export interface AppSettings {
   darkMode: boolean;
-  fontSize: number; // 1-5
+  fontSize: number;
   fontStyle: FontStyle;
   voiceURI?: string;
   speakingRate?: number;
@@ -61,7 +62,8 @@ export interface LawBook {
   content: string;
   abbreviation: string;
   description?: string;
-  color: string; // Tailwind color class pattern
+  color: string;
   sourceUrl?: string;
   lastUpdated?: string;
+  isCustom?: boolean;
 }
