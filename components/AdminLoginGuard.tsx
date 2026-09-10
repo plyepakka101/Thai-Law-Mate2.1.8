@@ -24,10 +24,12 @@ export const AdminLoginGuard: React.FC<Props> = ({ children, onClose }) => {
     return () => window.removeEventListener('thai_law_mate_auth_changed', handleAuthChange);
   }, []);
 
-  // Initialize Google Identity Services if client ID exists
+  // Initialize Google Identity Services ONLY if a real client ID is configured
+  const googleClientId = (window as any).GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const hasRealGoogleClientId = Boolean(googleClientId && !googleClientId.includes('your-google-client-id'));
+
   useEffect(() => {
-    const googleClientId = (window as any).GOOGLE_CLIENT_ID || 'your-google-client-id.apps.googleusercontent.com';
-    if ((window as any).google?.accounts?.id) {
+    if (hasRealGoogleClientId && (window as any).google?.accounts?.id) {
       try {
         (window as any).google.accounts.id.initialize({
           client_id: googleClientId,
@@ -57,7 +59,7 @@ export const AdminLoginGuard: React.FC<Props> = ({ children, onClose }) => {
         console.warn('Google GIS init warning:', err);
       }
     }
-  }, []);
+  }, [hasRealGoogleClientId, googleClientId]);
 
   const handleManualLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,59 +151,62 @@ export const AdminLoginGuard: React.FC<Props> = ({ children, onClose }) => {
         </div>
       )}
 
-      {/* Google Sign-In Container */}
-      <div id="google-signin-btn-container" className="flex justify-center mb-4 min-h-[44px]"></div>
+      {hasRealGoogleClientId && (
+        <>
+          <div id="google-signin-btn-container" className="flex justify-center mb-4 min-h-[44px]"></div>
+          <div className="relative flex py-2 items-center mb-4">
+            <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+            <span className="flex-shrink mx-3 text-xs text-gray-400">หรือระบุ Gmail ของผู้ดูแลระบบ</span>
+            <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+          </div>
+        </>
+      )}
 
-      <div className="relative flex py-2 items-center mb-4">
-        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
-        <span className="flex-shrink mx-3 text-xs text-gray-400">หรือระบุ Gmail ของผู้ดูแลระบบ</span>
-        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
-      </div>
-
-      <form onSubmit={handleManualLogin} className="space-y-3">
+      <form onSubmit={handleManualLogin} className="space-y-4">
         <div>
-          <label className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 block">Gmail</label>
+          <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 block">Gmail ผู้ดูแลระบบ</label>
           <div className="relative">
-            <Mail size={16} className="absolute left-3 top-3.5 text-gray-400" />
+            <Mail size={16} className="absolute left-3 top-3 text-gray-400" />
             <input
               type="email"
               value={emailInput}
               onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="example@gmail.com"
+              placeholder="กรอก Gmail ผู้ดูแลระบบ"
               className="w-full pl-9 pr-3 py-2.5 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-law-500 outline-none"
+              required
             />
           </div>
         </div>
 
         {showPasscode && (
           <div>
-            <label className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 block">รหัสผ่านแอดมิน (Admin Passcode)</label>
+            <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 block">รหัสผ่านแอดมิน (ถ้ามี)</label>
             <input
               type="password"
               value={passcodeInput}
               onChange={(e) => setPasscodeInput(e.target.value)}
-              placeholder="กรอกรหัสผ่านแอดมิน"
+              placeholder="กรอกรหัสผ่านแอดมิน (ถ้ามี)"
               className="w-full px-3 py-2.5 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-law-500 outline-none"
             />
           </div>
         )}
 
-        <div className="flex items-center justify-between text-xs pt-1">
+        <div className="flex items-center justify-between text-xs">
           <button
             type="button"
             onClick={() => setShowPasscode(!showPasscode)}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 underline"
           >
-            {showPasscode ? 'ซ่อนรหัสผ่าน' : 'ใช้รหัสผ่านยืนยัน'}
+            {showPasscode ? 'ซ่อนรหัสผ่าน' : 'ใส่รหัสผ่านแอดมิน (ถ้ามี)'}
           </button>
         </div>
 
         <button
           type="submit"
           disabled={isBusy}
-          className="w-full py-3 bg-law-600 hover:bg-law-700 text-white rounded-xl font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
+          className="w-full py-3 bg-law-600 hover:bg-law-700 text-white rounded-xl font-bold text-sm transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {isBusy ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
+          <span>{isBusy ? 'กำลังตรวจสอบสิทธิ์...' : 'เข้าสู่ระบบ'}</span>
         </button>
       </form>
     </div>
