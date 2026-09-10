@@ -61,9 +61,10 @@ export const getCurrentUser = (): AuthUser | null => {
 };
 
 export const isUserAdmin = (user: AuthUser | null): boolean => {
-  if (!user) return false;
-  const adminList = getAdminEmails().map(e => e.toLowerCase());
-  return adminList.includes(user.email.toLowerCase()) || user.isAdmin === true;
+  if (!user || !user.email) return false;
+  if (user.isAdmin === true) return true;
+  const adminList = getAdminEmails().map(e => e.trim().toLowerCase());
+  return adminList.includes(user.email.trim().toLowerCase());
 };
 
 // Parse Google JWT Token
@@ -71,7 +72,11 @@ export const decodeGoogleCredential = (credential: string): { email: string; nam
   try {
     const payloadPart = credential.split('.')[1];
     if (!payloadPart) return null;
-    const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    let base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4;
+    if (pad) {
+      base64 += '='.repeat(4 - pad);
+    }
     const jsonPayload = decodeURIComponent(
       atob(base64)
         .split('')
@@ -80,8 +85,8 @@ export const decodeGoogleCredential = (credential: string): { email: string; nam
     );
     const decoded = JSON.parse(jsonPayload);
     return {
-      email: decoded.email,
-      name: decoded.name || decoded.email.split('@')[0],
+      email: decoded.email || '',
+      name: decoded.name || (decoded.email ? decoded.email.split('@')[0] : ''),
       picture: decoded.picture
     };
   } catch (err) {
@@ -96,9 +101,12 @@ export const loginWithGoogleCredential = (credential: string): { success: boolea
     return { success: false, message: 'ไม่สามารถอ่านข้อมูลจาก Google Token ได้' };
   }
 
-  const isAdmin = isUserAdmin({ email: decoded.email, name: decoded.name, isAdmin: false, loginTime: 0 });
+  const cleanEmail = decoded.email.trim().toLowerCase();
+  const adminList = getAdminEmails().map(e => e.trim().toLowerCase());
+  const isAdmin = adminList.includes(cleanEmail);
+
   const user: AuthUser = {
-    email: decoded.email.toLowerCase(),
+    email: cleanEmail,
     name: decoded.name,
     picture: decoded.picture,
     isAdmin,
@@ -112,7 +120,7 @@ export const loginWithGoogleCredential = (credential: string): { success: boolea
     return { 
       success: false, 
       user, 
-      message: `บัญชี ${decoded.email} ไม่มีสิทธิ์ผู้ดูแลระบบ (Admin) กรุณาใช้ Gmail ที่ได้รับอนุญาต` 
+      message: `บัญชี ${cleanEmail} ไม่มีสิทธิ์ผู้ดูแลระบบ (Admin) กรุณาใช้ Gmail ที่ได้รับอนุญาต` 
     };
   }
 
