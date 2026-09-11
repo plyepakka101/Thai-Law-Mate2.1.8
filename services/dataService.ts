@@ -69,7 +69,9 @@ const syncErrorListeners: Set<SyncErrorListener> = new Set();
 
 export const onSyncError = (listener: SyncErrorListener) => {
   syncErrorListeners.add(listener);
-  return () => syncErrorListeners.delete(listener);
+  return () => {
+    syncErrorListeners.delete(listener);
+  };
 };
 
 export const getSyncErrors = (): SyncErrorEntry[] => readJson<SyncErrorEntry[]>(SYNC_ERRORS_KEY, []);

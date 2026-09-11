@@ -12,7 +12,10 @@ const SyncErrorBanner: React.FC = () => {
   const [error, setError] = useState<SyncErrorEntry | null>(null);
 
   useEffect(() => {
-    return onSyncError((entry) => setError(entry));
+    const unsub = onSyncError((entry) => setError(entry));
+    return () => {
+      unsub();
+    };
   }, []);
 
   if (!error) return null;
