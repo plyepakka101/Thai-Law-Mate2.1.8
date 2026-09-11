@@ -161,6 +161,26 @@ export async function recordReview(
  * Add a section to a deck
  */
 export async function addSectionToDeck(deckId: string, sectionId: string, title?: string): Promise<boolean> {
+  // Optimistic local update
+  const localItems = getLocalItems();
+  const existing = localItems.find(i => i.deckId === deckId && i.sectionId === sectionId);
+  if (!existing) {
+    const newItem: MemorizationItem = {
+      id: `${deckId}_${sectionId}`,
+      deckId,
+      sectionId,
+      title: title || `มาตรา ${sectionId}`,
+      repetitions: 0,
+      intervalDays: 1,
+      easeFactor: 2.5,
+      streak: 0,
+      status: 'new',
+      nextReviewAt: new Date().toISOString()
+    };
+    writeJson(MEMO_ITEMS_KEY, [newItem, ...localItems]);
+    notify();
+  }
+
   try {
     const res = await fetch('/api/memorize', {
       method: 'POST',
@@ -171,7 +191,7 @@ export async function addSectionToDeck(deckId: string, sectionId: string, title?
       })
     });
     if (res.ok) {
-      await fetchItems(deckId);
+      await fetchItems();
       return true;
     }
   } catch (e) {

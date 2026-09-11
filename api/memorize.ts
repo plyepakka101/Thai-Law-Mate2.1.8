@@ -67,12 +67,12 @@ async function ensureTables(sql: any) {
   `;
 }
 
-// Built-in starter decks
+// Built-in starter decks per Law Book
 const BUILTIN_DECKS = [
   {
-    id: 'deck-crim-essential',
-    name: '🔥 มาตราสำคัญ อาญา (ภาค 1 & ภาคความผิด)',
-    description: 'มาตราหัวใจที่ออกสอบเนติบัณฑิต อัยการ และผู้ช่วยผู้พิพากษาบ่อยที่สุด (ม. 59, 68, 80, 83, 288, 334)',
+    id: 'deck-crim',
+    name: 'ประมวลกฎหมายอาญา (ป.อ.)',
+    description: 'ความผิดและโทษทางอาญา ภาค 1-3 (ม. 59, 68, 80, 83, 288, 334)',
     color: 'bg-red-500',
     sortOrder: 1,
     sections: [
@@ -91,9 +91,9 @@ const BUILTIN_DECKS = [
     ]
   },
   {
-    id: 'deck-civil-essential',
-    name: '📘 มาตราสำคัญ แพ่งและพาณิชย์ (นิติกรรม-หนี้-ละเมิด)',
-    description: 'หลักกฎหมายแพ่งพื้นฐานและมาตราสำคัญยอดฮิต (ม. 149, 150, 420, 213)',
+    id: 'deck-civil',
+    name: 'ประมวลกฎหมายแพ่งและพาณิชย์ (ป.พ.พ.)',
+    description: 'นิติกรรม สัญญา หนี้ ละเมิด ทรัพย์สิน ครอบครัว มรดก (ม. 149, 150, 420, 213)',
     color: 'bg-blue-500',
     sortOrder: 2,
     sections: [
@@ -105,9 +105,9 @@ const BUILTIN_DECKS = [
     ]
   },
   {
-    id: 'deck-crimproc-essential',
-    name: '🏛️ มาตราสำคัญ วิ.อาญา (สอบสวน & ฟ้องคดี)',
-    description: 'มาตราออกสอบบ่อย วิ.อาญา (ม. 2(4), 28, 39, 134, 140, 158)',
+    id: 'deck-crim_proc',
+    name: 'ประมวลกฎหมายวิธีพิจารณาความอาญา (ป.วิ.อ.)',
+    description: 'กระบวนพิจารณาคดีอาญา ผู้เสียหาย อำนาจสอบสวน ฟ้องคดี (ม. 2(4), 28, 39, 158)',
     color: 'bg-orange-600',
     sortOrder: 3,
     sections: [
@@ -116,6 +116,46 @@ const BUILTIN_DECKS = [
       { sectionId: 'crim_proc-39', title: 'มาตรา 39 - สิทธินำคดีอาญามาฟ้องระงับ' },
       { sectionId: 'crim_proc-158', title: 'มาตรา 158 - แบบของคำฟ้อง' }
     ]
+  },
+  {
+    id: 'deck-civil_proc',
+    name: 'ประมวลกฎหมายวิธีพิจารณาความแพ่ง (ป.วิ.พ.)',
+    description: 'กระบวนพิจารณาคดีแพ่ง อำนาจฟ้อง คำคู่ความ การดำเนินกระบวนพิจารณา',
+    color: 'bg-indigo-500',
+    sortOrder: 4,
+    sections: []
+  },
+  {
+    id: 'deck-const',
+    name: 'รัฐธรรมนูญแห่งราชอาณาจักรไทย (รธน.)',
+    description: 'กฎหมายสูงสุดของประเทศ สิทธิเสรีภาพ รัฐสภา ศาล',
+    color: 'bg-yellow-500',
+    sortOrder: 5,
+    sections: []
+  },
+  {
+    id: 'deck-bankruptcy',
+    name: 'พระราชบัญญัติล้มละลาย',
+    description: 'กระบวนการล้มละลายและการฟื้นฟูกิจการของลูกหนี้',
+    color: 'bg-emerald-600',
+    sortOrder: 6,
+    sections: []
+  },
+  {
+    id: 'deck-kwaeng',
+    name: 'พ.ร.บ. จัดตั้งศาลแขวงฯ',
+    description: 'กระบวนพิจารณาคดีอาญาในศาลแขวงและอำนาจศาล',
+    color: 'bg-teal-500',
+    sortOrder: 7,
+    sections: []
+  },
+  {
+    id: 'deck-court_const',
+    name: 'พระธรรมนูญศาลยุติธรรม',
+    description: 'เขตอำนาจศาลและองค์คณะผู้พิพากษา',
+    color: 'bg-slate-600',
+    sortOrder: 8,
+    sections: []
   }
 ];
 
@@ -149,20 +189,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const view = (req.query.view as string) || 'all';
       const deckId = req.query.deckId as string | undefined;
 
-      // Seed builtin decks if user has 0 decks
-      const deckCount = await sql`SELECT count(*) FROM memorization_decks WHERE user_id = ${userId};`;
-      if (Number(deckCount[0]?.count || 0) === 0) {
-        for (const d of BUILTIN_DECKS) {
-          await sql`
-            INSERT INTO memorization_decks (id, user_id, name, description, color, is_builtin, sort_order)
-            VALUES (${d.id}, ${userId}, ${d.name}, ${d.description}, ${d.color}, TRUE, ${d.sortOrder})
-            ON CONFLICT (id) DO NOTHING;
-          `;
+      // Ensure all builtin law book decks exist
+      for (const d of BUILTIN_DECKS) {
+        await sql`
+          INSERT INTO memorization_decks (id, user_id, name, description, color, is_builtin, sort_order)
+          VALUES (${d.id}, ${userId}, ${d.name}, ${d.description}, ${d.color}, TRUE, ${d.sortOrder})
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            color = EXCLUDED.color,
+            sort_order = EXCLUDED.sort_order;
+        `;
 
+        if (d.sections && d.sections.length > 0) {
           for (const s of d.sections) {
             const itemId = `${d.id}_${s.sectionId}`;
-            // Check if section exists in law_sections
-            const secExists = await sql`SELECT id, content FROM law_sections WHERE id = ${s.sectionId} LIMIT 1;`;
+            const secExists = await sql`SELECT id FROM law_sections WHERE id = ${s.sectionId} LIMIT 1;`;
             if (secExists.length > 0) {
               await sql`
                 INSERT INTO memorization_items (id, deck_id, law_section_id, user_id, title, status)
@@ -173,6 +215,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
       }
+
+      // Migrate any items from previous starter decks to canonical book decks
+      await sql`UPDATE memorization_items SET deck_id = 'deck-crim' WHERE deck_id = 'deck-crim-essential';`;
+      await sql`UPDATE memorization_items SET deck_id = 'deck-civil' WHERE deck_id = 'deck-civil-essential';`;
+      await sql`UPDATE memorization_items SET deck_id = 'deck-crim_proc' WHERE deck_id = 'deck-crimproc-essential';`;
+      await sql`DELETE FROM memorization_decks WHERE id IN ('deck-crim-essential', 'deck-civil-essential', 'deck-crimproc-essential');`;
 
       // 1. Fetch Decks with item counts and due counts
       const decks = await sql`
@@ -360,10 +408,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // 2. Add Item to Deck
       if (action === 'add_item') {
-        const { deckId, sectionId, title } = payload || {};
-        if (!deckId || !sectionId) {
-          return res.status(400).json({ error: 'deckId and sectionId are required' });
+        let { deckId, sectionId, title } = payload || {};
+        if (!sectionId) {
+          return res.status(400).json({ error: 'sectionId is required' });
         }
+
+        if (!deckId || deckId === 'auto') {
+          const sec = await sql`SELECT book_id FROM law_sections WHERE id = ${sectionId} LIMIT 1;`;
+          const bId = sec[0]?.book_id || 'crim';
+          deckId = `deck-${bId}`;
+        }
+
+        // Ensure target deck exists
+        await sql`
+          INSERT INTO memorization_decks (id, user_id, name, color, is_builtin)
+          VALUES (${deckId}, ${userId}, ${deckId.replace('deck-', '')}, 'bg-purple-600', TRUE)
+          ON CONFLICT (id) DO NOTHING;
+        `;
 
         const id = `${deckId}_${sectionId}`;
         await sql`
@@ -374,7 +435,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             updated_at = NOW();
         `;
 
-        return res.status(200).json({ success: true, id });
+        return res.status(200).json({ success: true, id, deckId });
       }
 
       // 3. Remove Item

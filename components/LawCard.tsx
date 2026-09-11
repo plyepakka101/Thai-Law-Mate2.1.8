@@ -250,14 +250,8 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       }
       return;
     }
-    let decks = getLocalDecks();
-    if (decks.length === 0) {
-      decks = await fetchDecks();
-    }
-    const targetDeck = decks[0];
-    if (targetDeck) {
-      await addSectionToDeck(targetDeck.id, law.id, `มาตรา ${law.sectionNumber}`);
-    }
+    const targetDeckId = `deck-${law.bookId || 'crim'}`;
+    await addSectionToDeck(targetDeckId, law.id, `มาตรา ${law.sectionNumber}`);
   };
 
   // --- Text Selection & Highlighting Logic ---
