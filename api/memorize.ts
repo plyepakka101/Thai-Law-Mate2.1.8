@@ -11,8 +11,9 @@ function isDbConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
-// Ensure tables exist
+let tablesEnsured = false;
 async function ensureTables(sql: any) {
+  if (tablesEnsured) return;
   await sql`
     CREATE TABLE IF NOT EXISTS memorization_decks (
       id VARCHAR(64) PRIMARY KEY,
@@ -65,6 +66,7 @@ async function ensureTables(sql: any) {
       reviewed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `;
+  tablesEnsured = true;
 }
 
 // Built-in starter decks per Law Book
