@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LawSection, UserNote, AppSettings, TextHighlight } from '../types';
 import { getOriginalLaw, getBooks } from '../services/dataService';
-import { addSectionToDeck, getLocalDecks, fetchDecks } from '../services/memorizeService';
+import { addSectionToDeck, removeItem, getLocalDecks, getLocalItems, fetchDecks, onMemorizeDataChanged } from '../services/memorizeService';
 import { BookOpen, Edit, Save, Trash2, ExternalLink, Star, Share2, Volume2, Square, Scale, History, Search, Highlighter, X, Brain } from 'lucide-react';
 import { SECTION_REF_REGEX, thaiToArabic, createHighlightRegex } from '../utils/textUtils';
 import { DiffView } from './DiffView';
@@ -234,8 +234,22 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
     }
   };
 
-  const [addedToMemo, setAddedToMemo] = useState(false);
-  const handleAddToMemorize = async () => {
+  const [memoItems, setMemoItems] = useState(getLocalItems());
+  useEffect(() => {
+    return onMemorizeDataChanged(() => {
+      setMemoItems(getLocalItems());
+    });
+  }, []);
+  const existingMemoItem = memoItems.find(i => i.sectionId === law.id);
+  const isInMemo = Boolean(existingMemoItem);
+
+  const handleToggleMemorize = async () => {
+    if (existingMemoItem) {
+      if (window.confirm(`ต้องการนำมาตรา ${law.sectionNumber} ออกจากชุดท่องสอบหรือไม่?`)) {
+        await removeItem(existingMemoItem.id);
+      }
+      return;
+    }
     let decks = getLocalDecks();
     if (decks.length === 0) {
       decks = await fetchDecks();
@@ -243,8 +257,6 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
     const targetDeck = decks[0];
     if (targetDeck) {
       await addSectionToDeck(targetDeck.id, law.id, `มาตรา ${law.sectionNumber}`);
-      setAddedToMemo(true);
-      setTimeout(() => setAddedToMemo(false), 3000);
     }
   };
 
@@ -711,16 +723,16 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
           </button>
 
           <button 
-            onClick={handleAddToMemorize}
+            onClick={handleToggleMemorize}
             className={`flex items-center space-x-1 text-sm px-3 py-1.5 rounded-md transition-all duration-200 hover:scale-105 active:scale-95 ${
-              addedToMemo 
-                ? 'text-purple-600 bg-purple-50 dark:text-purple-300 dark:bg-purple-950 font-bold' 
+              isInMemo 
+                ? 'text-purple-600 bg-purple-100 dark:text-purple-300 dark:bg-purple-950/70 font-bold shadow-sm' 
                 : 'text-gray-500 dark:text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-gray-700'
             }`}
-            title="เพิ่มมาตรานี้เข้าสู่ชุดท่องสอบ"
+            title={isInMemo ? "มาตรานี้อยู่ในระบบท่องสอบแล้ว (คลิกเพื่อนำออก)" : "เพิ่มมาตรานี้เข้าสู่ชุดท่องสอบ"}
           >
-            <Brain size={16} />
-            <span>{addedToMemo ? 'เพิ่มแล้ว ⭐' : 'ท่องสอบ'}</span>
+            <Brain size={16} className={isInMemo ? "text-purple-600 dark:text-purple-400" : ""} />
+            <span>{isInMemo ? 'ท่องสอบ ⭐' : 'ท่องสอบ'}</span>
           </button>
 
           {officialUrl && !law.isCustom && (

@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Brain, Sparkles, Flame, CheckCircle2, Clock, Plus, Play, 
-  Trash2, BookOpen, Layers, Star, RotateCcw, AlertCircle 
+  Trash2, BookOpen, Layers, Star, RotateCcw, AlertCircle, Search, X 
 } from 'lucide-react';
-import { MemorizationDeck, MemorizationItem, MemorizationStats } from '../types';
+import { MemorizationDeck, MemorizationItem, MemorizationStats, LawSection } from '../types';
 import { 
   fetchDecks, fetchItems, fetchDueItems, getLocalDecks, 
   getLocalItems, getLocalDueItems, getMemorizeStats, 
-  saveDeck, deleteDeck, onMemorizeDataChanged 
+  saveDeck, deleteDeck, removeItem, addSectionToDeck, onMemorizeDataChanged 
 } from '../services/memorizeService';
+import { getLaws } from '../services/dataService';
 import { formatNextReview } from '../services/srsEngine';
+import { thaiToArabic } from '../utils/textUtils';
 import { MemorizePlayer } from './MemorizePlayer';
 
 export const MemorizeHub: React.FC = () => {
@@ -25,11 +27,22 @@ export const MemorizeHub: React.FC = () => {
     deckTitle: string;
   } | null>(null);
 
+  // Filter & Search in Items List
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [selectedDeckFilter, setSelectedDeckFilter] = useState('all');
+
   // New deck modal
   const [showNewDeckModal, setShowNewDeckModal] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
   const [newDeckDesc, setNewDeckDesc] = useState('');
   const [newDeckColor, setNewDeckColor] = useState('bg-purple-600');
+
+  // Add Item to Deck Modal
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [addModalTargetDeck, setAddModalTargetDeck] = useState('');
+  const [addModalSearch, setAddModalSearch] = useState('');
+  const [allLaws, setAllLaws] = useState<LawSection[]>([]);
+  const [addedItemIds, setAddedItemIds] = useState<Set<string>>(new Set());
 
   const reloadData = async () => {
     setLoading(true);
@@ -47,6 +60,7 @@ export const MemorizeHub: React.FC = () => {
 
   useEffect(() => {
     reloadData();
+    setAllLaws(getLaws());
     return onMemorizeDataChanged(() => {
       setDecks(getLocalDecks());
       setItems(getLocalItems());
@@ -75,6 +89,27 @@ export const MemorizeHub: React.FC = () => {
     reloadData();
   };
 
+  const handleRemoveItem = async (itemId: string, sectionNumber?: string) => {
+    if (!window.confirm(`ต้องการนำมาตรา ${sectionNumber || ''} ออกจากชุดท่องสอบหรือไม่?`)) return;
+    await removeItem(itemId);
+    reloadData();
+  };
+
+  const handleOpenAddModal = (deckId?: string) => {
+    setAddModalTargetDeck(deckId || decks[0]?.id || '');
+    setAddModalSearch('');
+    setShowAddItemModal(true);
+  };
+
+  const handleAddSectionToDeck = async (law: LawSection) => {
+    const targetDeckId = addModalTargetDeck || decks[0]?.id;
+    if (!targetDeckId) return;
+
+    await addSectionToDeck(targetDeckId, law.id, `มาตรา ${law.sectionNumber}`);
+    setAddedItemIds(prev => new Set(prev).add(law.id));
+    reloadData();
+  };
+
   // If in active study session, render player
   if (activeSession) {
     return (
@@ -86,6 +121,29 @@ export const MemorizeHub: React.FC = () => {
       />
     );
   }
+
+  // Filter items for the table
+  const filteredItems = items.filter(item => {
+    if (selectedDeckFilter !== 'all' && item.deckId !== selectedDeckFilter) return false;
+    if (itemSearchQuery.trim()) {
+      const q = itemSearchQuery.trim().toLowerCase();
+      const matchSection = (item.sectionNumber || '').toLowerCase().includes(q);
+      const matchTitle = (item.title || '').toLowerCase().includes(q);
+      const matchContent = (item.content || '').toLowerCase().includes(q);
+      if (!matchSection && !matchTitle && !matchContent) return false;
+    }
+    return true;
+  });
+
+  // Filter laws in Add Item modal
+  const searchedLaws = allLaws.filter(l => {
+    if (!addModalSearch.trim()) return false;
+    const q = addModalSearch.trim().toLowerCase();
+    const cleanSection = thaiToArabic(l.sectionNumber).toLowerCase();
+    const matchSec = cleanSection.includes(q) || l.sectionNumber.includes(q);
+    const matchContent = l.content.toLowerCase().includes(q);
+    return matchSec || matchContent;
+  }).slice(0, 20);
 
   return (
     <div className="space-y-6 pb-16 animate-in fade-in duration-200 max-w-5xl mx-auto">
@@ -247,32 +305,84 @@ export const MemorizeHub: React.FC = () => {
 
       {/* Quick Law Section List in Memorize Mode */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <BookOpen className="text-law-600" size={20} />
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">มาตราทั้งหมดในระบบท่องสอบ ({items.length})</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              มาตราในระบบท่องสอบ ({filteredItems.length}/{items.length})
+            </h3>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Search items */}
+            <div className="relative min-w-[180px]">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+              <input
+                type="text"
+                value={itemSearchQuery}
+                onChange={e => setItemSearchQuery(e.target.value)}
+                placeholder="ค้นหามาตรา..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border dark:border-gray-700 bg-gray-50 dark:bg-gray-900 outline-none focus:border-law-500"
+              />
+            </div>
+
+            {/* Deck filter dropdown */}
+            <select
+              value={selectedDeckFilter}
+              onChange={e => setSelectedDeckFilter(e.target.value)}
+              className="text-xs py-1.5 px-2.5 rounded-xl border dark:border-gray-700 bg-gray-50 dark:bg-gray-900 outline-none focus:border-law-500"
+            >
+              <option value="all">ทุกชุดท่อง</option>
+              {decks.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+
+            <button
+              onClick={() => handleOpenAddModal()}
+              className="py-1.5 px-3 rounded-xl bg-law-600 hover:bg-law-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm shrink-0"
+            >
+              <Plus size={14} />
+              <span>เพิ่มมาตรา</span>
+            </button>
           </div>
         </div>
 
-        {items.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400">
-            ยังไม่มีมาตราในชุดท่อง ท่านสามารถเปิดอ่านกฎหมายในห้องสมุดแล้วกดปุ่ม "⭐ เพิ่มเข้าชุดท่องสอบ" ได้ทันที
+        {filteredItems.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400 space-y-2">
+            <div>ไม่พบมาตราในชุดท่องตามเงื่อนไข</div>
+            <button
+              onClick={() => handleOpenAddModal()}
+              className="inline-flex items-center gap-1 text-xs font-bold text-law-600 hover:underline"
+            >
+              <Plus size={14} />
+              <span>คลิกที่นี่เพื่อค้นหาและเพิ่มมาตราเข้าชุดท่อง</span>
+            </button>
           </div>
         ) : (
           <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-96 overflow-y-auto">
-            {items.map(item => {
+            {filteredItems.map(item => {
               const reviewStatus = formatNextReview(item.nextReviewAt);
+              const deck = decks.find(d => d.id === item.deckId);
+
               return (
-                <div key={item.id} className="py-3 flex items-center justify-between gap-3 text-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-law-600">ม. {item.sectionNumber}</span>
-                    <span className="text-gray-800 dark:text-gray-200 font-medium truncate max-w-xs sm:max-w-md">
-                      {item.title || item.content?.slice(0, 50)}...
-                    </span>
+                <div key={item.id} className="py-3 flex items-center justify-between gap-3 text-sm hover:bg-gray-50/50 dark:hover:bg-gray-700/30 px-2 rounded-lg transition">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-bold text-law-600 shrink-0">ม. {item.sectionNumber}</span>
+                    <div className="min-w-0">
+                      <div className="text-gray-800 dark:text-gray-200 font-medium truncate max-w-xs sm:max-w-md">
+                        {item.title || item.content?.slice(0, 60)}...
+                      </div>
+                      {deck && (
+                        <div className="text-[10px] text-gray-400 truncate">
+                          ชุด: {deck.name}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 text-xs">
-                    <span className={`font-semibold ${reviewStatus.color}`}>
+                    <span className={`font-semibold hidden sm:inline ${reviewStatus.color}`}>
                       {reviewStatus.label}
                     </span>
                     <button
@@ -282,6 +392,13 @@ export const MemorizeHub: React.FC = () => {
                     >
                       <Play size={14} />
                     </button>
+                    <button
+                      onClick={() => handleRemoveItem(item.id, item.sectionNumber)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 transition"
+                      title="ลบมาตรานี้ออกจากชุดท่อง"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               );
@@ -289,6 +406,114 @@ export const MemorizeHub: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Add Item Modal */}
+      {showAddItemModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-2 border-b dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Plus className="text-law-600" size={18} />
+                <span>เพิ่มมาตราเข้าชุดท่องสอบ</span>
+              </h3>
+              <button onClick={() => setShowAddItemModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">เลือกชุดท่องเป้าหมาย</label>
+                <select
+                  value={addModalTargetDeck}
+                  onChange={e => setAddModalTargetDeck(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:border-law-500"
+                >
+                  {decks.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">ค้นหากฎหมาย</label>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-3 text-gray-400" />
+                  <input
+                    type="text"
+                    value={addModalSearch}
+                    onChange={e => setAddModalSearch(e.target.value)}
+                    placeholder="พิมพ์เลขมาตรา เช่น 288, 59 หรือคำสำคัญ เช่น โดยเจตนา..."
+                    autoFocus
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-700 text-sm outline-none focus:border-law-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-64 divide-y divide-gray-100 dark:divide-gray-700">
+              {!addModalSearch.trim() ? (
+                <div className="p-6 text-center text-xs text-gray-400">
+                  พิมพ์เลขมาตราหรือเนื้อหาเพื่อค้นหากฎหมายที่ต้องการท่อง
+                </div>
+              ) : searchedLaws.length === 0 ? (
+                <div className="p-6 text-center text-xs text-gray-400">
+                  ไม่พบมาตราที่ตรงกับคำค้นหา
+                </div>
+              ) : (
+                searchedLaws.map(law => {
+                  const alreadyInThisDeck = items.some(i => i.deckId === addModalTargetDeck && i.sectionId === law.id) || addedItemIds.has(law.id);
+
+                  return (
+                    <div key={law.id} className="pt-2 pb-2 flex items-start justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-bold text-law-600">ม. {law.sectionNumber}</span>
+                          {(law.category || law.bookId) && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
+                              {law.category ? law.category.split(' > ')[0] : law.bookId}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-gray-600 dark:text-gray-300 line-clamp-2 leading-relaxed">
+                          {law.content}
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 pt-1">
+                        {alreadyInThisDeck ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-bold px-2 py-1 rounded bg-green-50 dark:bg-green-950">
+                            <CheckCircle2 size={12} /> เพิ่มแล้ว
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleAddSectionToDeck(law)}
+                            className="px-3 py-1 rounded-lg bg-law-600 hover:bg-law-700 text-white font-bold text-xs transition flex items-center gap-1 shadow-sm"
+                          >
+                            <Plus size={13} />
+                            <span>เพิ่ม</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2 border-t dark:border-gray-700 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAddItemModal(false)}
+                className="py-2 px-5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New Deck Modal */}
       {showNewDeckModal && (

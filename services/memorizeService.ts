@@ -181,6 +181,30 @@ export async function addSectionToDeck(deckId: string, sectionId: string, title?
 }
 
 /**
+ * Remove an item from memorization
+ */
+export async function removeItem(itemId: string): Promise<boolean> {
+  const localItems = getLocalItems().filter(i => i.id !== itemId);
+  writeJson(MEMO_ITEMS_KEY, localItems);
+  notify();
+
+  try {
+    const res = await fetch('/api/memorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'remove_item',
+        payload: { itemId }
+      })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Remove item error:', e);
+  }
+  return false;
+}
+
+/**
  * Save or create a custom deck
  */
 export async function saveDeck(deck: Partial<MemorizationDeck> & { name: string }): Promise<string | undefined> {
