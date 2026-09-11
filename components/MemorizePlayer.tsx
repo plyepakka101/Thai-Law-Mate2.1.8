@@ -57,6 +57,15 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, onFinish, on
     setReciteCountdown(null);
   }, [currentIndex]);
 
+  useEffect(() => {
+    // Reset reveal and answers when user switches paragraph
+    setRevealed(false);
+    setUserAnswers({});
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+    setReciteCountdown(null);
+  }, [selectedParagraphIdx]);
+
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
