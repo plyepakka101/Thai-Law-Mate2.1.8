@@ -189,23 +189,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const view = (req.query.view as string) || 'all';
       const deckId = req.query.deckId as string | undefined;
 
-      // Ensure all builtin law book decks exist
-      for (const d of BUILTIN_DECKS) {
-        await sql`
-          INSERT INTO memorization_decks (id, user_id, name, description, color, is_builtin, sort_order)
-          VALUES (${d.id}, ${userId}, ${d.name}, ${d.description}, ${d.color}, TRUE, ${d.sortOrder})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            description = EXCLUDED.description,
-            color = EXCLUDED.color,
-            sort_order = EXCLUDED.sort_order;
-        `;
+      // Only seed once if book decks are not yet created
+      const deckCheck = await sql`SELECT id FROM memorization_decks WHERE id = 'deck-crim' LIMIT 1;`;
+      if (deckCheck.length === 0) {
+        for (const d of BUILTIN_DECKS) {
+          await sql`
+            INSERT INTO memorization_decks (id, user_id, name, description, color, is_builtin, sort_order)
+            VALUES (${d.id}, ${userId}, ${d.name}, ${d.description}, ${d.color}, TRUE, ${d.sortOrder})
+            ON CONFLICT (id) DO NOTHING;
+          `;
 
-        if (d.sections && d.sections.length > 0) {
-          for (const s of d.sections) {
-            const itemId = `${d.id}_${s.sectionId}`;
-            const secExists = await sql`SELECT id FROM law_sections WHERE id = ${s.sectionId} LIMIT 1;`;
-            if (secExists.length > 0) {
+          if (d.sections && d.sections.length > 0) {
+            for (const s of d.sections) {
+              const itemId = `${d.id}_${s.sectionId}`;
               await sql`
                 INSERT INTO memorization_items (id, deck_id, law_section_id, user_id, title, status)
                 VALUES (${itemId}, ${d.id}, ${s.sectionId}, ${userId}, ${s.title}, 'new')
@@ -214,13 +210,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
         }
-      }
 
-      // Migrate any items from previous starter decks to canonical book decks
-      await sql`UPDATE memorization_items SET deck_id = 'deck-crim' WHERE deck_id = 'deck-crim-essential';`;
-      await sql`UPDATE memorization_items SET deck_id = 'deck-civil' WHERE deck_id = 'deck-civil-essential';`;
-      await sql`UPDATE memorization_items SET deck_id = 'deck-crim_proc' WHERE deck_id = 'deck-crimproc-essential';`;
-      await sql`DELETE FROM memorization_decks WHERE id IN ('deck-crim-essential', 'deck-civil-essential', 'deck-crimproc-essential');`;
+        // Migrate any items from previous starter decks to canonical book decks
+        await sql`UPDATE memorization_items SET deck_id = 'deck-crim' WHERE deck_id = 'deck-crim-essential';`;
+        await sql`UPDATE memorization_items SET deck_id = 'deck-civil' WHERE deck_id = 'deck-civil-essential';`;
+        await sql`UPDATE memorization_items SET deck_id = 'deck-crim_proc' WHERE deck_id = 'deck-crimproc-essential';`;
+        await sql`DELETE FROM memorization_decks WHERE id IN ('deck-crim-essential', 'deck-civil-essential', 'deck-crimproc-essential');`;
+      }
 
       // 1. Fetch Decks with item counts and due counts
       const decks = await sql`
