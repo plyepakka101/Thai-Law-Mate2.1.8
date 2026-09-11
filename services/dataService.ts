@@ -9,6 +9,7 @@ import { RAW_CONSTITUTION } from './lawConst';
 import { RAW_BANKRUPTCY } from './lawBankruptcy';
 import { RAW_KWAENG } from './lawKwaeng';
 import { RAW_COURT_CONST } from './lawCourtConst';
+import { flushPendingSync, queueSync, syncFetch } from './syncQueue';
 
 export const BOOKS: LawBook[] = [
   { id: 'crim', name: 'ประมวลกฎหมายอาญา', abbreviation: 'ป.อ.', content: RAW_CRIMINAL_CODE, color: 'bg-red-500', description: 'ความผิดและโทษทางอาญา', sourceUrl: 'https://searchlaw.ocs.go.th/council-of-state/#/public/doc/cGFqZ1lmZFpjSzUyM3BFY0Z2TVJ0Zz09', lastUpdated: '10 ก.พ. 2567' },
@@ -62,12 +63,7 @@ export const updateBookColor = (bookId: string, newColor: string): LawBook | und
   const book = allBooks.find(b => b.id === bookId);
   if (book) {
     book.color = newColor;
-    // Async sync to Neon
-    fetch('/api/books', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(book)
-    }).catch(e => console.warn('Neon sync book color warning:', e));
+    queueSync({ url: '/api/books', method: 'POST', body: book, label: `สีของเล่ม ${book.name}` });
   }
 
   notifyListeners();
@@ -98,12 +94,7 @@ export const saveCustomBook = (book: LawBook): LawBook => {
   if (index >= 0) books[index] = normalized; else books.push(normalized);
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(books));
 
-  // Async sync to Neon
-  fetch('/api/books', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(normalized)
-  }).catch(e => console.warn('Neon sync book warning:', e));
+  queueSync({ url: '/api/books', method: 'POST', body: normalized, label: `เล่ม ${normalized.name}` });
 
   return normalized;
 };
@@ -112,8 +103,7 @@ export const deleteCustomBook = (bookId: string) => {
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(getCustomBooks().filter(b => b.id !== bookId)));
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.bookId !== bookId)));
 
-  // Async delete from Neon
-  fetch(`/api/books?id=${encodeURIComponent(bookId)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete book warning:', e));
+  queueSync({ url: `/api/books?id=${encodeURIComponent(bookId)}`, method: 'DELETE', label: `ลบเล่ม ${bookId}` });
 };
 
 export const getOriginalLaw = (id: string): LawSection | undefined => INITIAL_LAWS.find(l => l.id === id);
@@ -156,19 +146,14 @@ export const saveCustomLaw = (law: LawSection | Omit<LawSection, 'id'>) => {
   if (index >= 0) customLaws[index] = newLaw; else customLaws.push(newLaw);
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(customLaws));
 
-  // Async sync to Neon
-  fetch('/api/laws', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(newLaw)
-  }).catch(e => console.warn('Neon sync law warning:', e));
+  queueSync({ url: '/api/laws', method: 'POST', body: newLaw, label: `มาตรา ${newLaw.sectionNumber}` });
 
   return newLaw;
 };
 
 export const restoreOriginalLaw = (id: string) => {
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.id !== id)));
-  fetch(`/api/laws?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete law warning:', e));
+  queueSync({ url: `/api/laws?id=${encodeURIComponent(id)}`, method: 'DELETE', label: `ลบมาตรา ${id}` });
 };
 export const deleteCustomLaw = (id: string) => restoreOriginalLaw(id);
 
@@ -177,14 +162,10 @@ export const saveNote = (note: UserNote) => {
   const notes = getNotes();
   if (!note.text?.trim() && !note.isHighlighted && !(note.textHighlights?.length)) {
     delete notes[note.sectionId];
-    fetch(`/api/notes?sectionId=${encodeURIComponent(note.sectionId)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete note warning:', e));
+    queueSync({ url: `/api/notes?sectionId=${encodeURIComponent(note.sectionId)}`, method: 'DELETE', label: `ลบบันทึกของ ${note.sectionId}` });
   } else {
     notes[note.sectionId] = note;
-    fetch('/api/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(note)
-    }).catch(e => console.warn('Neon sync note warning:', e));
+    queueSync({ url: '/api/notes', method: 'POST', body: note, label: `บันทึกของ ${note.sectionId}` });
   }
   localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   return notes;
@@ -193,11 +174,7 @@ export const saveNote = (note: UserNote) => {
 export const getSettings = (): AppSettings => readJson<AppSettings>(SETTINGS_KEY, { darkMode: false, fontSize: 2, fontStyle: 'modern' });
 export const saveSettings = (settings: AppSettings) => {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  fetch('/api/settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings)
-  }).catch(e => console.warn('Neon sync settings warning:', e));
+  queueSync({ url: '/api/settings', method: 'POST', body: settings, label: 'การตั้งค่า' });
 };
 
 export const exportData = (): string => JSON.stringify({ 
@@ -249,14 +226,7 @@ export const getCachedNeonStatus = (): NeonStatus => {
 
 export const checkNeonStatus = async (): Promise<NeonStatus> => {
   try {
-    const res = await fetch('/api/sync', { method: 'GET' });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const status: NeonStatus = { connected: false, message: errData.error || `HTTP ${res.status}`, lastChecked: Date.now() };
-      localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
-      return status;
-    }
-    const data = await res.json();
+    const data = await syncFetch('/api/sync', { method: 'GET' }) as { connected?: boolean; stats?: NeonStatus['stats']; message?: string };
     const status: NeonStatus = {
       connected: Boolean(data.connected),
       stats: data.stats,
@@ -268,7 +238,7 @@ export const checkNeonStatus = async (): Promise<NeonStatus> => {
   } catch (error) {
     const status: NeonStatus = {
       connected: false,
-      message: 'ออฟไลน์ หรือยังไม่ได้เชื่อมต่อ API',
+      message: error instanceof Error ? error.message : 'ออฟไลน์ หรือยังไม่ได้เชื่อมต่อ API',
       lastChecked: Date.now()
     };
     localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
@@ -285,22 +255,18 @@ export const syncToNeon = async (): Promise<{ success: boolean; message: string;
       settings: getSettings()
     };
 
-    const res = await fetch('/api/sync', {
+    const result = await syncFetch('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    });
+    }) as { synced?: unknown };
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return { success: false, message: err.error || `ซิงค์ไม่สำเร็จ (HTTP ${res.status})` };
-    }
+    await flushPendingSync();
 
-    const result = await res.json();
-    return { 
-      success: true, 
-      message: 'ซิงค์ข้อมูลขึ้น Neon สำเร็จแล้ว', 
-      details: result.synced 
+    return {
+      success: true,
+      message: 'ซิงค์ข้อมูลขึ้น Neon สำเร็จแล้ว',
+      details: result?.synced
     };
   } catch (error) {
     return { 
@@ -316,17 +282,14 @@ if (typeof window !== 'undefined') {
     try {
       const status = await checkNeonStatus();
       if (status.connected) {
-        // Fetch latest notes from Neon
-        const notesRes = await fetch('/api/notes');
-        if (notesRes.ok) {
-          const remoteNotes = await notesRes.json();
-          if (remoteNotes && typeof remoteNotes === 'object') {
-            const localNotes = getNotes();
-            // Merge remote notes with local notes (remote updates overwrite older local notes)
-            const merged = { ...localNotes, ...remoteNotes };
-            localStorage.setItem(NOTES_KEY, JSON.stringify(merged));
-            notifyListeners();
-          }
+        await flushPendingSync();
+        const remoteNotes = await syncFetch('/api/notes');
+        if (remoteNotes && typeof remoteNotes === 'object') {
+          const localNotes = getNotes();
+          // Merge remote notes with local notes (remote updates overwrite older local notes)
+          const merged = { ...localNotes, ...remoteNotes };
+          localStorage.setItem(NOTES_KEY, JSON.stringify(merged));
+          notifyListeners();
         }
       }
     } catch (e) {
