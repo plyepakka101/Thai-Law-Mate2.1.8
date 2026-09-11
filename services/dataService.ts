@@ -27,6 +27,7 @@ const CUSTOM_BOOKS_KEY = 'thai_law_mate_custom_books';
 const NOTES_KEY = 'thai_law_mate_notes';
 const SETTINGS_KEY = 'thai_law_mate_settings';
 const NEON_STATUS_KEY = 'thai_law_mate_neon_status';
+const SYNC_ERRORS_KEY = 'thai_law_mate_sync_errors';
 
 const readJson = <T,>(key: string, fallback: T): T => {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; }
@@ -41,6 +42,76 @@ export const onDataSynced = (listener: SyncListener) => {
 };
 const notifyListeners = () => syncListeners.forEach(l => l());
 
+// =====================================================================
+// NEW: Sync error tracking (the actual bug fix)
+//
+// Previously every Neon sync call used `.catch(e => console.warn(...))`
+// on the raw fetch(). fetch() only rejects on network-level failures —
+// a 400/500 response from the API resolves normally, so `.catch` never
+// fired. That meant server-side failures (bad payload, DB error, cold
+// start, etc.) were invisible: the item was already saved to
+// localStorage, the UI looked fine, and Neon silently never got the
+// write. `syncMutation` below fixes that by explicitly checking
+// `res.ok`, and every failure (network OR HTTP-level) is now:
+//   1. logged to console.error with detail,
+//   2. recorded to localStorage so it survives a refresh, and
+//   3. broadcast to any UI listener via `onSyncError`, so components
+//      (see components/SyncErrorBanner.tsx) can actually show it.
+// =====================================================================
+
+export interface SyncErrorEntry {
+  message: string;
+  timestamp: number;
+}
+
+type SyncErrorListener = (entry: SyncErrorEntry) => void;
+const syncErrorListeners: Set<SyncErrorListener> = new Set();
+
+export const onSyncError = (listener: SyncErrorListener) => {
+  syncErrorListeners.add(listener);
+  return () => syncErrorListeners.delete(listener);
+};
+
+export const getSyncErrors = (): SyncErrorEntry[] => readJson<SyncErrorEntry[]>(SYNC_ERRORS_KEY, []);
+
+export const clearSyncErrors = () => {
+  localStorage.removeItem(SYNC_ERRORS_KEY);
+};
+
+const recordSyncError = (message: string) => {
+  const entry: SyncErrorEntry = { message, timestamp: Date.now() };
+  const existing = getSyncErrors();
+  // Keep only the most recent 20 so this never grows unbounded.
+  const updated = [...existing, entry].slice(-20);
+  localStorage.setItem(SYNC_ERRORS_KEY, JSON.stringify(updated));
+  syncErrorListeners.forEach(l => l(entry));
+};
+
+/**
+ * Fire a mutation request to a Neon-backed API route and actually check
+ * whether it succeeded. Returns true/false instead of throwing, so call
+ * sites can stay "fire and forget" if they want — but failures are no
+ * longer silent.
+ */
+const syncMutation = async (url: string, options: RequestInit, label: string): Promise<boolean> => {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({} as { error?: string }));
+      const msg = `${label} ไม่สำเร็จ: ${errBody.error || `เซิร์ฟเวอร์ตอบกลับ HTTP ${res.status}`}`;
+      console.error('[Neon sync failed]', msg);
+      recordSyncError(msg);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    const msg = `${label} ไม่สำเร็จ: ${e instanceof Error ? e.message : 'เชื่อมต่อเครือข่ายไม่ได้'}`;
+    console.error('[Neon sync failed]', msg);
+    recordSyncError(msg);
+    return false;
+  }
+};
+
 const BOOK_COLORS_OVERRIDE_KEY = 'thai_law_mate_book_colors_override';
 
 export const getBookColorOverrides = (): Record<string, string> => readJson<Record<string, string>>(BOOK_COLORS_OVERRIDE_KEY, {});
@@ -50,7 +121,6 @@ export const updateBookColor = (bookId: string, newColor: string): LawBook | und
   overrides[bookId] = newColor;
   localStorage.setItem(BOOK_COLORS_OVERRIDE_KEY, JSON.stringify(overrides));
 
-  // If it's a custom book, also update in custom books array
   const customBooks = getCustomBooks();
   const customIdx = customBooks.findIndex(b => b.id === bookId);
   if (customIdx >= 0) {
@@ -62,12 +132,11 @@ export const updateBookColor = (bookId: string, newColor: string): LawBook | und
   const book = allBooks.find(b => b.id === bookId);
   if (book) {
     book.color = newColor;
-    // Async sync to Neon
-    fetch('/api/books', {
+    syncMutation('/api/books', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(book)
-    }).catch(e => console.warn('Neon sync book color warning:', e));
+    }, 'บันทึกสีหนังสือกฎหมาย');
   }
 
   notifyListeners();
@@ -98,12 +167,11 @@ export const saveCustomBook = (book: LawBook): LawBook => {
   if (index >= 0) books[index] = normalized; else books.push(normalized);
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(books));
 
-  // Async sync to Neon
-  fetch('/api/books', {
+  syncMutation('/api/books', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(normalized)
-  }).catch(e => console.warn('Neon sync book warning:', e));
+  }, `บันทึกหนังสือกฎหมาย "${normalized.name}"`);
 
   return normalized;
 };
@@ -112,8 +180,7 @@ export const deleteCustomBook = (bookId: string) => {
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(getCustomBooks().filter(b => b.id !== bookId)));
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.bookId !== bookId)));
 
-  // Async delete from Neon
-  fetch(`/api/books?id=${encodeURIComponent(bookId)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete book warning:', e));
+  syncMutation(`/api/books?id=${encodeURIComponent(bookId)}`, { method: 'DELETE' }, 'ลบหนังสือกฎหมาย');
 };
 
 export const getOriginalLaw = (id: string): LawSection | undefined => INITIAL_LAWS.find(l => l.id === id);
@@ -146,6 +213,11 @@ export const getLaws = (): LawSection[] => {
   });
 };
 
+/**
+ * Saves a custom law section. Returns immediately with the saved section
+ * (local write is synchronous, as before) while the Neon sync happens in
+ * the background — but a failed sync is now tracked, see `onSyncError`.
+ */
 export const saveCustomLaw = (law: LawSection | Omit<LawSection, 'id'>) => {
   const customLaws = readJson<LawSection[]>(CUSTOM_LAWS_KEY, []);
   const normalizedSection = thaiToArabic(law.sectionNumber).trim();
@@ -156,19 +228,18 @@ export const saveCustomLaw = (law: LawSection | Omit<LawSection, 'id'>) => {
   if (index >= 0) customLaws[index] = newLaw; else customLaws.push(newLaw);
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(customLaws));
 
-  // Async sync to Neon
-  fetch('/api/laws', {
+  syncMutation('/api/laws', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(newLaw)
-  }).catch(e => console.warn('Neon sync law warning:', e));
+  }, `บันทึกมาตรา ${newLaw.sectionNumber}`);
 
   return newLaw;
 };
 
 export const restoreOriginalLaw = (id: string) => {
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.id !== id)));
-  fetch(`/api/laws?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete law warning:', e));
+  syncMutation(`/api/laws?id=${encodeURIComponent(id)}`, { method: 'DELETE' }, 'ลบมาตรา');
 };
 export const deleteCustomLaw = (id: string) => restoreOriginalLaw(id);
 
@@ -177,14 +248,14 @@ export const saveNote = (note: UserNote) => {
   const notes = getNotes();
   if (!note.text?.trim() && !note.isHighlighted && !(note.textHighlights?.length)) {
     delete notes[note.sectionId];
-    fetch(`/api/notes?sectionId=${encodeURIComponent(note.sectionId)}`, { method: 'DELETE' }).catch(e => console.warn('Neon delete note warning:', e));
+    syncMutation(`/api/notes?sectionId=${encodeURIComponent(note.sectionId)}`, { method: 'DELETE' }, 'ลบโน้ต');
   } else {
     notes[note.sectionId] = note;
-    fetch('/api/notes', {
+    syncMutation('/api/notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(note)
-    }).catch(e => console.warn('Neon sync note warning:', e));
+    }, 'บันทึกโน้ต');
   }
   localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   return notes;
@@ -193,19 +264,19 @@ export const saveNote = (note: UserNote) => {
 export const getSettings = (): AppSettings => readJson<AppSettings>(SETTINGS_KEY, { darkMode: false, fontSize: 2, fontStyle: 'modern' });
 export const saveSettings = (settings: AppSettings) => {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  fetch('/api/settings', {
+  syncMutation('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings)
-  }).catch(e => console.warn('Neon sync settings warning:', e));
+  }, 'บันทึกการตั้งค่า');
 };
 
-export const exportData = (): string => JSON.stringify({ 
-  version: 3, 
-  timestamp: Date.now(), 
-  notes: getNotes(), 
-  customLaws: readJson<LawSection[]>(CUSTOM_LAWS_KEY, []), 
-  customBooks: getCustomBooks() 
+export const exportData = (): string => JSON.stringify({
+  version: 3,
+  timestamp: Date.now(),
+  notes: getNotes(),
+  customLaws: readJson<LawSection[]>(CUSTOM_LAWS_KEY, []),
+  customBooks: getCustomBooks()
 }, null, 2);
 
 export const importData = (jsonString: string): boolean => {
@@ -215,8 +286,7 @@ export const importData = (jsonString: string): boolean => {
     if (data.notes) localStorage.setItem(NOTES_KEY, JSON.stringify(data.notes));
     if (Array.isArray(data.customLaws)) localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(data.customLaws));
     if (Array.isArray(data.customBooks)) localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(data.customBooks));
-    
-    // Automatically trigger sync to Neon after import
+
     syncToNeon().catch(e => console.warn('Auto sync after import warning:', e));
     return true;
   } catch { return false; }
@@ -293,19 +363,23 @@ export const syncToNeon = async (): Promise<{ success: boolean; message: string;
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      return { success: false, message: err.error || `ซิงค์ไม่สำเร็จ (HTTP ${res.status})` };
+      const msg = err.error || `ซิงค์ไม่สำเร็จ (HTTP ${res.status})`;
+      recordSyncError(`ซิงค์ทั้งหมด: ${msg}`);
+      return { success: false, message: msg };
     }
 
     const result = await res.json();
-    return { 
-      success: true, 
-      message: 'ซิงค์ข้อมูลขึ้น Neon สำเร็จแล้ว', 
-      details: result.synced 
+    return {
+      success: true,
+      message: 'ซิงค์ข้อมูลขึ้น Neon สำเร็จแล้ว',
+      details: result.synced
     };
   } catch (error) {
-    return { 
-      success: false, 
-      message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ' 
+    const msg = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ';
+    recordSyncError(`ซิงค์ทั้งหมด: ${msg}`);
+    return {
+      success: false,
+      message: msg
     };
   }
 };
@@ -316,13 +390,11 @@ if (typeof window !== 'undefined') {
     try {
       const status = await checkNeonStatus();
       if (status.connected) {
-        // Fetch latest notes from Neon
         const notesRes = await fetch('/api/notes');
         if (notesRes.ok) {
           const remoteNotes = await notesRes.json();
           if (remoteNotes && typeof remoteNotes === 'object') {
             const localNotes = getNotes();
-            // Merge remote notes with local notes (remote updates overwrite older local notes)
             const merged = { ...localNotes, ...remoteNotes };
             localStorage.setItem(NOTES_KEY, JSON.stringify(merged));
             notifyListeners();
