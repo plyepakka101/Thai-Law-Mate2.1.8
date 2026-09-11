@@ -8,6 +8,7 @@ import { LawCard } from './components/LawCard';
 import { LawEditor } from './components/LawEditor';
 import { LawManager } from './components/LawManager';
 import { SettingsView } from './components/SettingsView';
+import { SyncStatusBanner } from './components/SyncStatusBanner';
 import { TOCView } from './components/TOCView';
 import { AdminLoginGuard } from './components/AdminLoginGuard';
 import { LoginModal } from './components/LoginModal';
@@ -70,6 +71,7 @@ const AppV3: React.FC = () => {
   return (
     <HashRouter>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 pb-20 md:pb-0 flex">
+        <SyncStatusBanner />
         {/* Sidebar */}
         <aside className="hidden md:flex w-64 shrink-0 flex-col bg-white dark:bg-gray-800 border-r dark:border-gray-700 h-screen sticky top-0 justify-between">
           <div>

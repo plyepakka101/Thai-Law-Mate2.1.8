@@ -1,4 +1,5 @@
 import { LawBook, LawSection, UserNote } from '../types';
+import { syncFetch } from './syncQueue';
 
 const CUSTOM_LAWS_KEY = 'thai_law_mate_custom_laws';
 const CUSTOM_BOOKS_KEY = 'thai_law_mate_custom_books';
@@ -17,37 +18,20 @@ const writeJson = <T,>(key: string, value: T) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
-const postJson = async (url: string, body: unknown) => {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `${url}: HTTP ${response.status}`);
-  }
-  return response.json().catch(() => ({}));
-};
+const postJson = (url: string, body: unknown) => syncFetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+});
 
 export async function bootstrapNeonData(): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  const [booksResponse, lawsResponse, notesResponse] = await Promise.all([
-    fetch('/api/books'),
-    fetch('/api/laws?limit=50000'),
-    fetch('/api/notes')
+  const [remoteBooks, remoteLaws, remoteNotes] = await Promise.all([
+    syncFetch('/api/books') as Promise<LawBook[]>,
+    syncFetch('/api/laws?limit=50000') as Promise<LawSection[]>,
+    syncFetch('/api/notes') as Promise<Record<string, UserNote>>
   ]);
-
-  if (!booksResponse.ok || !lawsResponse.ok || !notesResponse.ok) {
-    throw new Error(
-      `Neon bootstrap failed: books=${booksResponse.status}, laws=${lawsResponse.status}, notes=${notesResponse.status}`
-    );
-  }
-
-  const remoteBooks = await booksResponse.json() as LawBook[];
-  const remoteLaws = await lawsResponse.json() as LawSection[];
-  const remoteNotes = await notesResponse.json() as Record<string, UserNote>;
 
   const cloudBooks = remoteBooks.filter(book => book.isCustom);
   const cloudLaws = remoteLaws.filter(law => law.isCustom);
