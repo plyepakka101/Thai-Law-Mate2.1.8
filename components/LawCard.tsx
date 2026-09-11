@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LawSection, UserNote, AppSettings, TextHighlight } from '../types';
 import { getOriginalLaw, getBooks } from '../services/dataService';
-import { BookOpen, Edit, Save, Trash2, ExternalLink, Star, Share2, Volume2, Square, Scale, History, Search, Highlighter, X } from 'lucide-react';
+import { addSectionToDeck, getLocalDecks, fetchDecks } from '../services/memorizeService';
+import { BookOpen, Edit, Save, Trash2, ExternalLink, Star, Share2, Volume2, Square, Scale, History, Search, Highlighter, X, Brain } from 'lucide-react';
 import { SECTION_REF_REGEX, thaiToArabic, createHighlightRegex } from '../utils/textUtils';
 import { DiffView } from './DiffView';
 
@@ -230,6 +231,20 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
       } catch (err) {
         alert('ไม่สามารถคัดลอกได้');
       }
+    }
+  };
+
+  const [addedToMemo, setAddedToMemo] = useState(false);
+  const handleAddToMemorize = async () => {
+    let decks = getLocalDecks();
+    if (decks.length === 0) {
+      decks = await fetchDecks();
+    }
+    const targetDeck = decks[0];
+    if (targetDeck) {
+      await addSectionToDeck(targetDeck.id, law.id, `มาตรา ${law.sectionNumber}`);
+      setAddedToMemo(true);
+      setTimeout(() => setAddedToMemo(false), 3000);
     }
   };
 
@@ -693,6 +708,19 @@ ${officialUrl ? `\nอ้างอิง: ${officialUrl}` : ''}`;
           >
             <Share2 size={16} />
             <span>แชร์</span>
+          </button>
+
+          <button 
+            onClick={handleAddToMemorize}
+            className={`flex items-center space-x-1 text-sm px-3 py-1.5 rounded-md transition-all duration-200 hover:scale-105 active:scale-95 ${
+              addedToMemo 
+                ? 'text-purple-600 bg-purple-50 dark:text-purple-300 dark:bg-purple-950 font-bold' 
+                : 'text-gray-500 dark:text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-gray-700'
+            }`}
+            title="เพิ่มมาตรานี้เข้าสู่ชุดท่องสอบ"
+          >
+            <Brain size={16} />
+            <span>{addedToMemo ? 'เพิ่มแล้ว ⭐' : 'ท่องสอบ'}</span>
           </button>
 
           {officialUrl && !law.isCustom && (

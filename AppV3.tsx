@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { HashRouter } from 'react-router-dom';
-import { BookMarked, ChevronLeft, Database, Home, Library, List, PlusSquare, Scale, Search, Settings, Star, LogOut, UserCircle } from 'lucide-react';
+import { BookMarked, ChevronLeft, Database, Home, Library, List, PlusSquare, Scale, Search, Settings, Star, LogOut, UserCircle, Brain } from 'lucide-react';
 import { LawBook, LawSection, UserNote, AppSettings, ViewState } from './types';
 import { deleteCustomLaw, getBooks, getLaws, getNotes, getSettings, saveCustomLaw, saveNote, saveSettings } from './services/dataService';
 import { Bookshelf } from './components/Bookshelf';
@@ -11,6 +11,7 @@ import { SettingsView } from './components/SettingsView';
 import { TOCView } from './components/TOCView';
 import { AdminLoginGuard } from './components/AdminLoginGuard';
 import { LoginModal } from './components/LoginModal';
+import { MemorizeHub } from './components/MemorizeHub';
 import { getCurrentUser, isUserAdmin, logout, AuthUser } from './services/authService';
 import { normalizeSearchQuery, thaiToArabic } from './utils/textUtils';
 import SyncErrorBanner from './components/SyncErrorBanner';
@@ -81,9 +82,26 @@ const AppV3: React.FC = () => {
               <b className="text-xl">Thai Law Mate <span className="text-xs text-law-600">V3</span></b>
             </div>
             <nav className="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-200px)]">
-              <button onClick={back} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                <Library size={20}/>ห้องสมุดกฎหมาย
+              <button onClick={back} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === ViewState.BOOKSHELF ? 'bg-law-50 text-law-700 font-semibold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                <Library size={20}/>
+                <span>ห้องสมุดกฎหมาย</span>
               </button>
+
+              <button 
+                onClick={() => { setView(ViewState.MEMORIZE); setActiveBookId(null); setQuery(''); }} 
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                  view === ViewState.MEMORIZE 
+                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 font-bold shadow-sm' 
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                <Brain size={20} className="text-purple-600 dark:text-purple-400 shrink-0"/>
+                <div className="flex items-center justify-between w-full">
+                  <span>ท่องสอบ (เตรียมสอบ)</span>
+                  <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded-full font-bold">ใหม่</span>
+                </div>
+              </button>
+
               {isAdmin && nav(ViewState.MANAGE,'จัดการกฎหมาย V3',Database)}
               {activeBookId && (
                 <>
@@ -278,6 +296,7 @@ const AppV3: React.FC = () => {
 
           <div className="px-4 md:px-0">
             {view === ViewState.BOOKSHELF && <Bookshelf books={books} laws={laws} onSelectBook={selectBook}/>} 
+            {view === ViewState.MEMORIZE && <MemorizeHub />}
             {view === ViewState.ADD && <LawEditor initialBookId={activeBookId} onSave={saveLaw} onCancel={() => setView(ViewState.HOME)}/>} 
             {view === ViewState.TOC && <TOCView laws={filtered} onNavigate={scrollTo}/>} 
             {view === ViewState.SETTINGS && <SettingsView settings={settings} onUpdateSettings={updateSettings}/>} 
@@ -322,15 +341,17 @@ const AppV3: React.FC = () => {
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around p-1">
           {activeBookId ? (
             <>
-              <button onClick={() => setView(ViewState.HOME)} className="p-2"><Home size={22}/></button>
-              <button onClick={() => setView(ViewState.TOC)} className="p-2"><List size={22}/></button>
-              <button onClick={() => setView(ViewState.SEARCH)} className="p-2"><Search size={22}/></button>
-              <button onClick={() => setView(ViewState.ADD)} className="p-2"><PlusSquare size={22}/></button>
+              <button onClick={() => setView(ViewState.HOME)} className={`p-2 ${view === ViewState.HOME ? 'text-law-600' : 'text-gray-400'}`}><Home size={22}/></button>
+              <button onClick={() => setView(ViewState.TOC)} className={`p-2 ${view === ViewState.TOC ? 'text-law-600' : 'text-gray-400'}`}><List size={22}/></button>
+              <button onClick={() => setView(ViewState.SEARCH)} className={`p-2 ${view === ViewState.SEARCH ? 'text-law-600' : 'text-gray-400'}`}><Search size={22}/></button>
+              <button onClick={() => { setView(ViewState.MEMORIZE); setActiveBookId(null); }} className={`p-2 ${view === ViewState.MEMORIZE ? 'text-purple-600' : 'text-gray-400'}`}><Brain size={22}/></button>
+              <button onClick={() => setView(ViewState.SETTINGS)} className={`p-2 ${view === ViewState.SETTINGS ? 'text-law-600' : 'text-gray-400'}`}><Settings size={22}/></button>
             </>
           ) : (
             <>
-              <button onClick={back} className="p-2"><Library size={22}/></button>
-              <button onClick={() => setView(ViewState.MANAGE)} className="p-2"><Database size={22}/></button>
+              <button onClick={back} className={`p-2 ${view === ViewState.BOOKSHELF ? 'text-law-600 font-bold' : 'text-gray-400'}`} title="ห้องสมุด"><Library size={22}/></button>
+              <button onClick={() => { setView(ViewState.MEMORIZE); setActiveBookId(null); }} className={`p-2 ${view === ViewState.MEMORIZE ? 'text-purple-600 font-bold' : 'text-gray-400'}`} title="ท่องสอบ"><Brain size={22}/></button>
+              <button onClick={() => setView(ViewState.SETTINGS)} className={`p-2 ${view === ViewState.SETTINGS ? 'text-law-600 font-bold' : 'text-gray-400'}`} title="ตั้งค่า"><Settings size={22}/></button>
             </>
           )}
         </nav>

@@ -35,7 +35,8 @@ export enum ViewState {
   ADD = 'ADD',
   MANAGE = 'MANAGE',
   SETTINGS = 'SETTINGS',
-  TOC = 'TOC'
+  TOC = 'TOC',
+  MEMORIZE = 'MEMORIZE'
 }
 
 export interface BackupData {
@@ -67,3 +68,60 @@ export interface LawBook {
   lastUpdated?: string;
   isCustom?: boolean;
 }
+
+// -------------------------------------------------------------
+// Legal Memorization System Types
+// -------------------------------------------------------------
+
+export type MemorizeStudyMode = 'read' | 'recall' | 'cloze' | 'voice';
+
+export interface ParagraphSlice {
+  index: number;
+  label: string; // e.g. "วรรคหนึ่ง", "วรรคสอง"
+  content: string;
+}
+
+export interface MemorizationDeck {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  isBuiltin?: boolean;
+  sortOrder?: number;
+  totalItems?: number;
+  dueItems?: number;
+  masteredItems?: number;
+}
+
+export interface MemorizationItem {
+  id: string;
+  deckId: string;
+  sectionId: string;
+  title?: string;
+  customText?: string;
+  keywords?: string[];
+  audioUrl?: string;
+  
+  // Section details joined from law_sections
+  sectionNumber?: string;
+  content?: string;
+  bookId?: string;
+  
+  // SRS state
+  repetitions: number;
+  intervalDays: number;
+  easeFactor: number;
+  streak: number;
+  lastQuality?: number;
+  lastReviewedAt?: string;
+  nextReviewAt?: string;
+  status: 'new' | 'learning' | 'review' | 'mastered';
+}
+
+export interface MemorizationStats {
+  total: number;
+  dueToday: number;
+  mastered: number;
+  learning: number;
+}
+
