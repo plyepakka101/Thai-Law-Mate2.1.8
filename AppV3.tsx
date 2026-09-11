@@ -13,6 +13,7 @@ import { AdminLoginGuard } from './components/AdminLoginGuard';
 import { LoginModal } from './components/LoginModal';
 import { getCurrentUser, isUserAdmin, logout, AuthUser } from './services/authService';
 import { normalizeSearchQuery, thaiToArabic } from './utils/textUtils';
+import SyncErrorBanner from './components/SyncErrorBanner';
 
 const AppV3: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.BOOKSHELF);
@@ -343,6 +344,8 @@ const AppV3: React.FC = () => {
             setShowLoginModal(false);
           }}
         />
+
+        <SyncErrorBanner />
       </div>
     </HashRouter>
   );
