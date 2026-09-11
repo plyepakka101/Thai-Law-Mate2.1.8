@@ -1,5 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, isDbConfigured } from './db';
+import { neon } from '@neondatabase/serverless';
+
+function getDb() {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error('DATABASE_URL is not configured');
+  return neon(dbUrl);
+}
+
+function isDbConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -21,11 +31,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const bookId = req.query.bookId as string | undefined;
       const q = req.query.q as string | undefined;
+      const isCustomOnly = req.query.custom === 'true' || req.query.custom === '1';
       const limit = parseInt(req.query.limit as string) || 5000;
       const offset = parseInt(req.query.offset as string) || 0;
 
       let rows;
-      if (bookId && q) {
+      if (isCustomOnly) {
+        rows = await sql`
+          SELECT id, book_id as "bookId", section_number as "sectionNumber", content, category, is_custom as "isCustom"
+          FROM law_sections
+          WHERE is_custom = TRUE
+          ORDER BY created_at ASC
+          LIMIT ${limit} OFFSET ${offset};
+        `;
+      } else if (bookId && q) {
         const searchPattern = `%${q}%`;
         rows = await sql`
           SELECT id, book_id as "bookId", section_number as "sectionNumber", content, category, is_custom as "isCustom"
@@ -68,9 +87,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Support batch upsert
       if (Array.isArray(body)) {
         for (const item of body) {
+          const targetBookId = item.bookId || 'custom';
+          // Ensure parent book exists in law_books to satisfy foreign key constraint
+          await sql`
+            INSERT INTO law_books (id, name, abbreviation, description, is_custom)
+            VALUES (${targetBookId}, ${targetBookId === 'custom' ? 'กฎหมายเพิ่มเติม' : targetBookId}, 'กำหนดเอง', 'กฎหมายกำหนดเอง', TRUE)
+            ON CONFLICT (id) DO NOTHING;
+          `;
+
           await sql`
             INSERT INTO law_sections (id, book_id, section_number, content, category, is_custom)
-            VALUES (${item.id}, ${item.bookId || 'custom'}, ${item.sectionNumber}, ${item.content}, ${item.category || 'กฎหมายเพิ่มเติม'}, ${item.isCustom ?? true})
+            VALUES (${item.id}, ${targetBookId}, ${item.sectionNumber}, ${item.content}, ${item.category || 'กฎหมายเพิ่มเติม'}, ${item.isCustom ?? true})
             ON CONFLICT (id) DO UPDATE SET
               section_number = EXCLUDED.section_number,
               content = EXCLUDED.content,
@@ -83,9 +110,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Single item upsert
+      const targetBookId = body.bookId || 'custom';
+      // Ensure parent book exists in law_books to satisfy foreign key constraint
+      await sql`
+        INSERT INTO law_books (id, name, abbreviation, description, is_custom)
+        VALUES (${targetBookId}, ${targetBookId === 'custom' ? 'กฎหมายเพิ่มเติม' : targetBookId}, 'กำหนดเอง', 'กฎหมายกำหนดเอง', TRUE)
+        ON CONFLICT (id) DO NOTHING;
+      `;
+
       await sql`
         INSERT INTO law_sections (id, book_id, section_number, content, category, is_custom)
-        VALUES (${body.id}, ${body.bookId || 'custom'}, ${body.sectionNumber}, ${body.content}, ${body.category || 'กฎหมายเพิ่มเติม'}, ${body.isCustom ?? true})
+        VALUES (${body.id}, ${targetBookId}, ${body.sectionNumber}, ${body.content}, ${body.category || 'กฎหมายเพิ่มเติม'}, ${body.isCustom ?? true})
         ON CONFLICT (id) DO UPDATE SET
           section_number = EXCLUDED.section_number,
           content = EXCLUDED.content,

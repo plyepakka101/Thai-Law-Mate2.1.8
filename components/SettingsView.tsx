@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Download, Upload, Settings as SettingsIcon, Monitor, Cloud, HardDrive, Info, Volume2, Database, RefreshCw, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
-import { exportData, importData, checkNeonStatus, syncToNeon, getCachedNeonStatus, NeonStatus } from '../services/dataService';
+import { exportData, importData, checkNeonStatus, syncToNeon, syncFromNeon, getCachedNeonStatus, NeonStatus } from '../services/dataService';
 import { AppSettings } from '../types';
 
 interface SettingsViewProps {
@@ -92,6 +92,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
       setNeonStatus(status);
     }
     setTimeout(() => setSyncMessage(null), 5000);
+  };
+
+  const handleSyncFromNeon = async () => {
+    setSyncing(true);
+    setSyncMessage('กำลังดึงข้อมูลล่าสุดจาก Neon (ซิงค์ข้ามเครื่อง)...');
+    const res = await syncFromNeon();
+    setSyncing(false);
+    setSyncMessage(res.message);
+    if (res.success) {
+      const status = await checkNeonStatus();
+      setNeonStatus(status);
+    }
+    setTimeout(() => setSyncMessage(null), 6000);
   };
 
   // Filter only Thai voices
@@ -286,22 +299,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onUpdateSe
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          {!neonStatus.connected && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300 text-xs rounded-xl flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <div>
+                <span className="font-semibold">ข้อแนะนำ: </span>
+                หากเปิดบนเครื่องอื่นหรือผ่าน Vercel แล้วยังไม่เชื่อมต่อ กรุณาตรวจสอบว่าได้ตั้งค่า <strong>DATABASE_URL</strong> ใน <strong>Vercel Dashboard &gt; Project Settings &gt; Environment Variables</strong> แล้วหรือยัง
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
             <button
-              onClick={handleCheckNeon}
-              className="py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              onClick={handleSyncFromNeon}
+              disabled={syncing}
+              className="py-2.5 px-3 rounded-xl bg-law-600 hover:bg-law-700 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-sm"
+              title="ดึงกฎหมายและโน้ตล่าสุดจากคลาวด์ลงมายังเครื่องนี้"
             >
-              <RefreshCw size={16} />
-              <span>ตรวจสอบการเชื่อมต่อ</span>
+              {syncing ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
+              <span>ดึงข้อมูลล่าสุดจาก Neon</span>
             </button>
 
             <button
               onClick={handleSyncToNeon}
               disabled={syncing}
-              className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-sm"
+              title="ส่งกฎหมายและโน้ตที่เพิ่มในเครื่องนี้ขึ้น Neon"
             >
-              {syncing ? <RefreshCw size={16} className="animate-spin" /> : <Cloud size={16} />}
-              <span>{syncing ? 'กำลังซิงค์...' : 'ซิงค์ข้อมูลในเครื่องขึ้น Neon'}</span>
+              {syncing ? <RefreshCw size={15} className="animate-spin" /> : <Cloud size={15} />}
+              <span>ซิงค์ข้อมูลขึ้น Neon</span>
+            </button>
+
+            <button
+              onClick={handleCheckNeon}
+              className="py-2.5 px-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+            >
+              <RefreshCw size={15} />
+              <span>ตรวจการเชื่อมต่อ</span>
             </button>
           </div>
 

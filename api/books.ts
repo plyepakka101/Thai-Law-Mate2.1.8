@@ -1,5 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, isDbConfigured } from './db';
+import { neon } from '@neondatabase/serverless';
+
+function getDb() {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error('DATABASE_URL is not configured');
+  return neon(dbUrl);
+}
+
+function isDbConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -19,12 +29,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const sql = getDb();
 
     if (req.method === 'GET') {
-      const rows = await sql`
-        SELECT id, name, abbreviation, description, color, source_url as "sourceUrl", 
-               last_updated as "lastUpdated", content, is_custom as "isCustom", sort_order as "sortOrder"
-        FROM law_books
-        ORDER BY sort_order ASC, created_at ASC;
-      `;
+      const isCustomOnly = req.query.custom === 'true' || req.query.custom === '1';
+      let rows;
+      if (isCustomOnly) {
+        rows = await sql`
+          SELECT id, name, abbreviation, description, color, source_url as "sourceUrl", 
+                 last_updated as "lastUpdated", content, is_custom as "isCustom", sort_order as "sortOrder"
+          FROM law_books
+          WHERE is_custom = TRUE
+          ORDER BY sort_order ASC, created_at ASC;
+        `;
+      } else {
+        rows = await sql`
+          SELECT id, name, abbreviation, description, color, source_url as "sourceUrl", 
+                 last_updated as "lastUpdated", content, is_custom as "isCustom", sort_order as "sortOrder"
+          FROM law_books
+          ORDER BY sort_order ASC, created_at ASC;
+        `;
+      }
       return res.status(200).json(rows);
     }
 

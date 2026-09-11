@@ -176,6 +176,23 @@ export const saveCustomBook = (book: LawBook): LawBook => {
   return normalized;
 };
 
+export const saveCustomBookAsync = async (book: LawBook): Promise<LawBook> => {
+  const normalized = saveCustomBook(book);
+  try {
+    const res = await fetch('/api/books', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(normalized)
+    });
+    if (!res.ok) {
+      console.warn('Neon sync book status:', res.status);
+    }
+  } catch (e) {
+    console.warn('Neon sync book network error:', e);
+  }
+  return normalized;
+};
+
 export const deleteCustomBook = (bookId: string) => {
   localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(getCustomBooks().filter(b => b.id !== bookId)));
   localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(readJson<LawSection[]>(CUSTOM_LAWS_KEY, []).filter(l => l.bookId !== bookId)));
@@ -235,6 +252,61 @@ export const saveCustomLaw = (law: LawSection | Omit<LawSection, 'id'>) => {
   }, `บันทึกมาตรา ${newLaw.sectionNumber}`);
 
   return newLaw;
+};
+
+export const saveCustomLawAsync = async (law: LawSection | Omit<LawSection, 'id'>): Promise<LawSection> => {
+  const newLaw = saveCustomLaw(law);
+  try {
+    const res = await fetch('/api/laws', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLaw)
+    });
+    if (!res.ok) {
+      console.warn('Neon sync law status:', res.status);
+    }
+  } catch (e) {
+    console.warn('Neon sync law network error:', e);
+  }
+  return newLaw;
+};
+
+export const saveCustomLawsBatch = async (laws: LawSection[]): Promise<boolean> => {
+  if (!laws.length) return true;
+  const customLaws = readJson<LawSection[]>(CUSTOM_LAWS_KEY, []);
+  const preparedLaws: LawSection[] = laws.map(law => {
+    const normalizedSection = thaiToArabic(law.sectionNumber).trim();
+    const existingId = law.id;
+    const id = existingId || (law.bookId && law.bookId !== 'custom' 
+      ? `${law.bookId}-${normalizedSection.replace(/\//g, '-').replace(/\s+/g, '-')}` 
+      : `custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
+    return {
+      ...law,
+      id,
+      sectionNumber: normalizedSection,
+      category: law.category || 'กฎหมายเพิ่มเติม',
+      isCustom: true,
+      bookId: law.bookId || 'custom'
+    };
+  });
+
+  for (const law of preparedLaws) {
+    const idx = customLaws.findIndex(l => l.id === law.id);
+    if (idx >= 0) customLaws[idx] = law; else customLaws.push(law);
+  }
+  localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(customLaws));
+
+  try {
+    const res = await fetch('/api/laws', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(preparedLaws)
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Neon batch sync laws network error:', e);
+    return false;
+  }
 };
 
 export const restoreOriginalLaw = (id: string) => {
@@ -384,25 +456,97 @@ export const syncToNeon = async (): Promise<{ success: boolean; message: string;
   }
 };
 
-// Initial background sync on app load
+export const syncFromNeon = async (): Promise<{ success: boolean; message: string; counts?: { books: number; laws: number; notes: number }; stats?: any }> => {
+  try {
+    const res = await fetch('/api/sync?pull=1', { method: 'GET' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, message: err.error || `ซิงค์ไม่สำเร็จ (HTTP ${res.status})` };
+    }
+
+    const data = await res.json();
+    if (!data.connected) {
+      const status: NeonStatus = { connected: false, message: data.message || 'ไม่ได้ตั้งค่า DATABASE_URL', lastChecked: Date.now() };
+      localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
+      return { 
+        success: false, 
+        message: data.message || 'ยังไม่ได้เชื่อมต่อฐานข้อมูล Neon (กรุณาตั้งค่า DATABASE_URL บน Vercel)' 
+      };
+    }
+
+    let syncedBookCount = 0;
+    let syncedLawCount = 0;
+    let syncedNoteCount = 0;
+
+    // 1. Sync custom books
+    if (Array.isArray(data.customBooks) && data.customBooks.length > 0) {
+      const localBooks = getCustomBooks();
+      const bookMap = new Map<string, LawBook>();
+      localBooks.forEach(b => bookMap.set(b.id, b));
+      data.customBooks.forEach((b: LawBook) => bookMap.set(b.id, b));
+      const mergedBooks = Array.from(bookMap.values());
+      localStorage.setItem(CUSTOM_BOOKS_KEY, JSON.stringify(mergedBooks));
+      syncedBookCount = data.customBooks.length;
+    }
+
+    // 2. Sync custom laws
+    if (Array.isArray(data.customLaws) && data.customLaws.length > 0) {
+      const localLaws = readJson<LawSection[]>(CUSTOM_LAWS_KEY, []);
+      const lawMap = new Map<string, LawSection>();
+      localLaws.forEach(l => lawMap.set(l.id, l));
+      data.customLaws.forEach((l: LawSection) => lawMap.set(l.id, l));
+      const mergedLaws = Array.from(lawMap.values());
+      localStorage.setItem(CUSTOM_LAWS_KEY, JSON.stringify(mergedLaws));
+      syncedLawCount = data.customLaws.length;
+    }
+
+    // 3. Sync notes
+    if (data.notes && typeof data.notes === 'object') {
+      const localNotes = getNotes();
+      const mergedNotes = { ...localNotes, ...data.notes };
+      localStorage.setItem(NOTES_KEY, JSON.stringify(mergedNotes));
+      syncedNoteCount = Object.keys(data.notes).length;
+    }
+
+    // 4. Sync settings
+    if (data.settings && typeof data.settings === 'object') {
+      const current = getSettings();
+      const mergedSettings = { ...current, ...data.settings };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(mergedSettings));
+    }
+
+    const status: NeonStatus = {
+      connected: true,
+      stats: data.stats,
+      message: 'เชื่อมต่อฐานข้อมูล Neon สำเร็จ',
+      lastChecked: Date.now()
+    };
+    localStorage.setItem(NEON_STATUS_KEY, JSON.stringify(status));
+
+    notifyListeners();
+
+    return {
+      success: true,
+      message: `ซิงค์ข้อมูลจาก Neon สำเร็จ (พบกฎหมายเพิ่ม ${syncedBookCount} เล่ม, ${syncedLawCount} มาตรา, ${syncedNoteCount} บันทึก)`,
+      counts: { books: syncedBookCount, laws: syncedLawCount, notes: syncedNoteCount },
+      stats: data.stats
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ Neon'
+    };
+  }
+};
+
+// Initial background sync on app load (cross-device sync)
 if (typeof window !== 'undefined') {
   setTimeout(async () => {
     try {
-      const status = await checkNeonStatus();
-      if (status.connected) {
-        const notesRes = await fetch('/api/notes');
-        if (notesRes.ok) {
-          const remoteNotes = await notesRes.json();
-          if (remoteNotes && typeof remoteNotes === 'object') {
-            const localNotes = getNotes();
-            const merged = { ...localNotes, ...remoteNotes };
-            localStorage.setItem(NOTES_KEY, JSON.stringify(merged));
-            notifyListeners();
-          }
-        }
-      }
+      await syncFromNeon();
     } catch (e) {
-      console.log('Background Neon sync status check:', e);
+      console.log('Background Neon cross-device sync error:', e);
     }
   }, 1000);
 }
+

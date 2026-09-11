@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { BookPlus, Upload, FileJson, FileText, FileCode2, Save, Trash2, RefreshCw, Database, AlertCircle, Check, Palette } from 'lucide-react';
 import { LawBook, LawSection } from '../types';
-import { deleteCustomBook, getCustomBooks, saveCustomBook, saveCustomLaw, updateBookColor } from '../services/dataService';
+import { deleteCustomBook, getCustomBooks, saveCustomBook, saveCustomBookAsync, saveCustomLaw, saveCustomLawsBatch, updateBookColor } from '../services/dataService';
 import { parseLaws } from '../services/lawParser';
 
 interface Props { books: LawBook[]; onChanged: () => void; }
@@ -84,27 +84,35 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
     } finally { setBusy(false); }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const finalName = name.trim() || preview?.name || '';
     const finalContent = content.trim() || preview?.content || '';
     if (!finalName || !finalContent) { setMessage('กรุณาระบุชื่อกฎหมายและเนื้อหา'); return; }
     const id = `custom-book-${slugify(finalName)}-${Date.now()}`;
-    const book = saveCustomBook({ 
-      id, 
-      name: finalName, 
-      abbreviation: abbreviation.trim() || preview?.abbreviation || 'กำหนดเอง', 
-      description: description.trim() || 'กฎหมายที่ผู้ใช้เพิ่มเอง', 
-      sourceUrl: sourceUrl.trim() || undefined, 
-      lastUpdated: lastUpdated.trim() || undefined, 
-      color: color || 'bg-law-600', 
-      content: finalContent, 
-      isCustom: true 
-    });
-    const laws = parseLaws(finalContent, book.id, book.name);
-    laws.forEach(law => saveCustomLaw(law));
-    onChanged();
-    setMessage(`บันทึก “${book.name}” แล้ว ${laws.length} มาตรา`);
-    clearForm();
+    setBusy(true);
+    setMessage('กำลังบันทึกและอัปโหลดข้อมูลขึ้น Neon PostgreSQL...');
+    try {
+      const book = await saveCustomBookAsync({ 
+        id, 
+        name: finalName, 
+        abbreviation: abbreviation.trim() || preview?.abbreviation || 'กำหนดเอง', 
+        description: description.trim() || 'กฎหมายที่ผู้ใช้เพิ่มเอง', 
+        sourceUrl: sourceUrl.trim() || undefined, 
+        lastUpdated: lastUpdated.trim() || undefined, 
+        color: color || 'bg-law-600', 
+        content: finalContent, 
+        isCustom: true 
+      });
+      const laws = parseLaws(finalContent, book.id, book.name);
+      await saveCustomLawsBatch(laws);
+      onChanged();
+      setMessage(`บันทึก “${book.name}” แล้ว ${laws.length} มาตรา (อัปโหลดขึ้น Neon สำเร็จแล้ว)`);
+      clearForm();
+    } catch (err) {
+      setMessage(`บันทึกในเครื่องสำเร็จ แต่การเชื่อมต่อ Neon ล้มเหลว: ${err instanceof Error ? err.message : ''}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const removeBook = (id: string, bookName: string) => {

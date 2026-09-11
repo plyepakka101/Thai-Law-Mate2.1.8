@@ -1,5 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, isDbConfigured } from './db';
+import { neon } from '@neondatabase/serverless';
+
+function getDb() {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error('DATABASE_URL is not configured');
+  return neon(dbUrl);
+}
+
+function isDbConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
