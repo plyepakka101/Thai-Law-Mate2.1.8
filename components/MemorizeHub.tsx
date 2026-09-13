@@ -3,7 +3,7 @@ import {
   Brain, Sparkles, Flame, CheckCircle2, Clock, Plus, Play, 
   Trash2, BookOpen, Layers, Star, RotateCcw, AlertCircle, Search, X 
 } from 'lucide-react';
-import { MemorizationDeck, MemorizationItem, MemorizationStats, LawSection } from '../types';
+import { MemorizationDeck, MemorizationItem, MemorizationStats, LawSection, AppSettings } from '../types';
 import { 
   fetchDecks, fetchItems, fetchDueItems, getLocalDecks, 
   getLocalItems, getLocalDueItems, getMemorizeStats, 
@@ -14,7 +14,11 @@ import { formatNextReview } from '../services/srsEngine';
 import { thaiToArabic } from '../utils/textUtils';
 import { MemorizePlayer } from './MemorizePlayer';
 
-export const MemorizeHub: React.FC = () => {
+interface MemorizeHubProps {
+  settings?: AppSettings;
+}
+
+export const MemorizeHub: React.FC<MemorizeHubProps> = ({ settings }) => {
   const [decks, setDecks] = useState<MemorizationDeck[]>(getLocalDecks());
   const [items, setItems] = useState<MemorizationItem[]>(getLocalItems());
   const [dueItems, setDueItems] = useState<MemorizationItem[]>(getLocalDueItems());
@@ -144,6 +148,7 @@ export const MemorizeHub: React.FC = () => {
       <MemorizePlayer
         items={activeSession.items}
         deckTitle={activeSession.deckTitle}
+        settings={settings}
         onFinish={() => { setActiveSession(null); reloadData(); }}
         onBack={() => { setActiveSession(null); reloadData(); }}
       />

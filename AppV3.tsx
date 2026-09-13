@@ -296,7 +296,7 @@ const AppV3: React.FC = () => {
 
           <div className="px-4 md:px-0">
             {view === ViewState.BOOKSHELF && <Bookshelf books={books} laws={laws} onSelectBook={selectBook}/>} 
-            {view === ViewState.MEMORIZE && <MemorizeHub />}
+            {view === ViewState.MEMORIZE && <MemorizeHub settings={settings} />}
             {view === ViewState.ADD && <LawEditor initialBookId={activeBookId} onSave={saveLaw} onCancel={() => setView(ViewState.HOME)}/>} 
             {view === ViewState.TOC && <TOCView laws={filtered} onNavigate={scrollTo}/>} 
             {view === ViewState.SETTINGS && <SettingsView settings={settings} onUpdateSettings={updateSettings}/>} 

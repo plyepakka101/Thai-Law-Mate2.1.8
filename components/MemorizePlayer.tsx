@@ -4,30 +4,60 @@ import {
   RotateCcw, Sparkles, Zap, Flame, Award, ChevronRight,
   Pause, Play, HelpCircle
 } from 'lucide-react';
-import { MemorizationItem, MemorizeStudyMode, ParagraphSlice } from '../types';
+import { MemorizationItem, MemorizeStudyMode, ParagraphSlice, AppSettings } from '../types';
 import { sliceParagraphs } from '../services/paragraphSlicer';
 import { generateClozeBlanks, ClozeBlank } from '../services/keywordExtractor';
 import { recordReview } from '../services/memorizeService';
 import { ReviewRating } from '../services/srsEngine';
+import { getSettings } from '../services/dataService';
 
 interface Props {
   items: MemorizationItem[];
   deckTitle?: string;
+  settings?: AppSettings;
   onFinish: () => void;
   onBack: () => void;
 }
 
-export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, onFinish, onBack }) => {
+export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, onFinish, onBack }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [mode, setMode] = useState<MemorizeStudyMode>('recall');
   const [selectedParagraphIdx, setSelectedParagraphIdx] = useState(0); // 0 = all
   const [revealed, setRevealed] = useState(false);
   
+  // Effective settings fallback
+  const effectiveSettings = settings || getSettings();
+
   // Audio state
   const [speaking, setSpeaking] = useState(false);
-  const [voiceRate, setVoiceRate] = useState(1.0);
+  const [voiceRate, setVoiceRate] = useState<number>(effectiveSettings.speakingRate || 1.0);
   const [audioPaused, setAudioPaused] = useState(false);
   const [reciteCountdown, setReciteCountdown] = useState<number | null>(null);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  // Update voiceRate if effectiveSettings changes
+  useEffect(() => {
+    if (effectiveSettings.speakingRate) {
+      setVoiceRate(effectiveSettings.speakingRate);
+    }
+  }, [effectiveSettings.speakingRate]);
+
+  // Load and cache SpeechSynthesis voices
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    const loadVoices = () => {
+      setVoices(window.speechSynthesis.getVoices());
+    };
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    return () => {
+      if (window.speechSynthesis.onvoiceschanged === loadVoices) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
 
   // Cloze state
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
@@ -102,12 +132,26 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, onFinish, on
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.lang = 'th-TH';
     utterance.rate = voiceRate;
 
-    const thaiVoices = window.speechSynthesis.getVoices().filter(v => v.lang.includes('th'));
-    if (thaiVoices.length > 0) {
-      utterance.voice = thaiVoices[0];
+    const currentSettings = settings || getSettings();
+    const availableVoices = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
+    let selectedVoice: SpeechSynthesisVoice | null = null;
+
+    // 1. If user selected a specific voice in Settings, try to match it by voiceURI
+    if (currentSettings.voiceURI) {
+      selectedVoice = availableVoices.find(v => v.voiceURI === currentSettings.voiceURI) || null;
+    }
+
+    // 2. If no voice selected or specified voice not found, find a Thai voice
+    if (!selectedVoice) {
+      selectedVoice = availableVoices.find(v => v.lang === 'th-TH') || availableVoices.find(v => v.lang.includes('th')) || null;
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    } else {
+      utterance.lang = 'th-TH';
     }
 
     utterance.onstart = () => setSpeaking(true);
