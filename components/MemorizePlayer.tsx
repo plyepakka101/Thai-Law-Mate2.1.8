@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowLeft, Volume2, VolumeX, Eye, EyeOff, CheckCircle2, 
   RotateCcw, Sparkles, Zap, Flame, Award, ChevronRight,
-  Pause, Play, HelpCircle
+  Pause, Play, HelpCircle, Square
 } from 'lucide-react';
 import { MemorizationItem, MemorizeStudyMode, ParagraphSlice, AppSettings } from '../types';
 import { sliceParagraphs } from '../services/paragraphSlicer';
@@ -30,10 +30,16 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
 
   // Audio state
   const [speaking, setSpeaking] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const [voiceRate, setVoiceRate] = useState<number>(effectiveSettings.speakingRate || 1.0);
   const [audioPaused, setAudioPaused] = useState(false);
   const [reciteCountdown, setReciteCountdown] = useState<number | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  // Loop & Timer refs
+  const isLoopingRef = useRef(false);
+  const loopTimerRef = useRef<any>(null);
+  const countdownTimerRef = useRef<any>(null);
 
   // Update voiceRate if effectiveSettings changes
   useEffect(() => {
@@ -77,31 +83,45 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
   // Cloze content
   const clozeData = generateClozeBlanks(activeText, 4);
 
+  const stopTTS = useCallback(() => {
+    isLoopingRef.current = false;
+    setIsLooping(false);
+
+    if (loopTimerRef.current) {
+      clearTimeout(loopTimerRef.current);
+      loopTimerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+    setReciteCountdown(null);
+  }, []);
+
   useEffect(() => {
     // Reset state on card change
     setRevealed(false);
     setUserAnswers({});
     setSelectedParagraphIdx(0);
-    window.speechSynthesis?.cancel();
-    setSpeaking(false);
-    setReciteCountdown(null);
-  }, [currentIndex]);
+    stopTTS();
+  }, [currentIndex, stopTTS]);
 
   useEffect(() => {
     // Reset reveal and answers when user switches paragraph
     setRevealed(false);
     setUserAnswers({});
-    window.speechSynthesis?.cancel();
-    setSpeaking(false);
-    setReciteCountdown(null);
-  }, [selectedParagraphIdx]);
+    stopTTS();
+  }, [selectedParagraphIdx, stopTTS]);
 
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      window.speechSynthesis?.cancel();
+      stopTTS();
     };
-  }, []);
+  }, [stopTTS]);
 
   if (!currentItem) {
     return (
@@ -122,9 +142,9 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
   }
 
   // -------------------------------------------------------------------
-  // Audio playback handler
+  // Single Audio playback handler
   // -------------------------------------------------------------------
-  const playTTS = (textToSpeak: string, onEndCallback?: () => void) => {
+  const playSingleTTS = (textToSpeak: string, onEndCallback?: () => void) => {
     if (!('speechSynthesis' in window)) {
       alert('เบราว์เซอร์ของคุณไม่รองรับ Speech Synthesis');
       return;
@@ -159,38 +179,121 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
       setSpeaking(false);
       if (onEndCallback) onEndCallback();
     };
-    utterance.onerror = () => setSpeaking(false);
+    utterance.onerror = (e: any) => {
+      if (e.error === 'canceled' || e.error === 'interrupted') return;
+      console.warn('Speech error:', e);
+      setSpeaking(false);
+      isLoopingRef.current = false;
+      setIsLooping(false);
+    };
 
     window.speechSynthesis.speak(utterance);
   };
 
-  const stopTTS = () => {
-    window.speechSynthesis.cancel();
-    setSpeaking(false);
-    setReciteCountdown(null);
+  // -------------------------------------------------------------------
+  // Continuous Audio Loop (ทั้งมาตรา หรือ ทีละวรรค วน loop จนกว่าจะกดหยุด)
+  // -------------------------------------------------------------------
+  const handleToggleAudioLoop = () => {
+    if (isLooping || speaking) {
+      stopTTS();
+      return;
+    }
+
+    stopTTS();
+    isLoopingRef.current = true;
+    setIsLooping(true);
+
+    const cleanText = activeText.replace(/\[\d+\]/g, '').trim();
+    let textToSpeak = cleanText;
+
+    if (selectedParagraphIdx === 0) {
+      const prefix = cleanText.startsWith('มาตรา') ? '' : `มาตรา ${currentItem.sectionNumber}. `;
+      textToSpeak = `${prefix}${cleanText}`;
+    } else {
+      const pLabel = paragraphs[selectedParagraphIdx - 1]?.label || `วรรค ${selectedParagraphIdx}`;
+      const prefix = cleanText.startsWith(pLabel) ? '' : `${pLabel}. `;
+      textToSpeak = `${prefix}${cleanText}`;
+    }
+
+    const runLoopIteration = () => {
+      if (!isLoopingRef.current) return;
+      playSingleTTS(textToSpeak, () => {
+        if (!isLoopingRef.current) return;
+        // Pause 1.2 seconds between loop repetitions
+        loopTimerRef.current = setTimeout(() => {
+          if (isLoopingRef.current) {
+            runLoopIteration();
+          }
+        }, 1200);
+      });
+    };
+
+    runLoopIteration();
   };
 
-  // Voice Recite Mode: Play Prompt -> Pause countdown -> Play Answer
+  // -------------------------------------------------------------------
+  // Voice Recite Mode: Play Prompt -> Pause countdown -> Play Answer (Loop until stopped)
+  // -------------------------------------------------------------------
   const handleStartVoiceRecite = () => {
+    if (isLooping || speaking || reciteCountdown !== null) {
+      stopTTS();
+      return;
+    }
+
     stopTTS();
-    const titlePrompt = `มาตรา ${currentItem.sectionNumber}`;
-    playTTS(titlePrompt, () => {
-      // Prompt ended -> start countdown for user to recite
-      let count = 7;
-      setReciteCountdown(count);
-      const timer = setInterval(() => {
-        count -= 1;
-        if (count <= 0) {
-          clearInterval(timer);
-          setReciteCountdown(null);
-          // Play Reveal Answer
-          setRevealed(true);
-          playTTS(`เฉลย ${activeText}`);
-        } else {
-          setReciteCountdown(count);
-        }
-      }, 1000);
-    });
+    isLoopingRef.current = true;
+    setIsLooping(true);
+    setRevealed(false);
+
+    const pLabel = selectedParagraphIdx > 0 ? (paragraphs[selectedParagraphIdx - 1]?.label || '') : '';
+    const titlePrompt = pLabel 
+      ? `มาตรา ${currentItem.sectionNumber} ${pLabel}` 
+      : `มาตรา ${currentItem.sectionNumber}`;
+
+    const cleanText = activeText.replace(/\[\d+\]/g, '').trim();
+
+    const runReciteLoop = () => {
+      if (!isLoopingRef.current) return;
+
+      setRevealed(false);
+      playSingleTTS(titlePrompt, () => {
+        if (!isLoopingRef.current) return;
+
+        // Prompt ended -> start countdown for user to recite
+        let count = 7;
+        setReciteCountdown(count);
+
+        countdownTimerRef.current = setInterval(() => {
+          count -= 1;
+          if (count <= 0) {
+            if (countdownTimerRef.current) {
+              clearInterval(countdownTimerRef.current);
+              countdownTimerRef.current = null;
+            }
+            setReciteCountdown(null);
+
+            if (!isLoopingRef.current) return;
+
+            // Play Reveal Answer
+            setRevealed(true);
+            playSingleTTS(`เฉลย ${cleanText}`, () => {
+              if (!isLoopingRef.current) return;
+
+              // Pause 2.5 seconds before next round
+              loopTimerRef.current = setTimeout(() => {
+                if (isLoopingRef.current) {
+                  runReciteLoop();
+                }
+              }, 2500);
+            });
+          } else {
+            setReciteCountdown(count);
+          }
+        }, 1000);
+      });
+    };
+
+    runReciteLoop();
   };
 
   // -------------------------------------------------------------------
@@ -216,7 +319,7 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
       {/* Top Bar Navigation */}
       <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
         <button
-          onClick={onBack}
+          onClick={() => { stopTTS(); onBack(); }}
           className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 hover:text-law-600 transition"
         >
           <ArrowLeft size={18} />
@@ -328,21 +431,23 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
               <option value="1.5">1.5x</option>
             </select>
 
-            {speaking ? (
+            {isLooping || speaking ? (
               <button
                 onClick={stopTTS}
-                className="p-2.5 rounded-xl bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 hover:bg-red-200 transition"
-                title="หยุดเสียงอ่าน"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-medium text-xs transition shadow-sm animate-pulse"
+                title="กดเพื่อหยุดเสียง (วน loop)"
               >
-                <VolumeX size={18} />
+                <Square size={13} fill="currentColor" />
+                <span>หยุดเสียง (วน loop)</span>
               </button>
             ) : (
               <button
-                onClick={() => playTTS(activeText)}
-                className="p-2.5 rounded-xl bg-law-50 dark:bg-law-900/40 text-law-600 dark:text-law-300 hover:bg-law-100 transition"
-                title="ฟังเสียงตัวบทมาตรานี้"
+                onClick={handleToggleAudioLoop}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-law-50 dark:bg-law-900/40 text-law-600 dark:text-law-300 hover:bg-law-100 dark:hover:bg-law-900/60 font-medium text-xs transition border border-law-200 dark:border-law-800"
+                title="ฟังเสียงอ่านวนซ้ำ (loop) จนกว่าจะกดหยุด"
               >
-                <Volume2 size={18} />
+                <RotateCcw size={13} />
+                <span>ฟังเสียงวน loop</span>
               </button>
             )}
           </div>
@@ -462,28 +567,49 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
             <div className="space-y-6 text-center py-6">
               <div className="max-w-md mx-auto space-y-3">
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  แอปจะอ่านชื่อมาตรานำ แล้วเว้นช่วงให้ท่านท่องออกเสียง จากนั้นจะเล่นเสียงเฉลยให้อัตโนมัติ
+                  แอปจะอ่านชื่อมาตรานำ แล้วเว้นช่วงให้ท่านท่องออกเสียง จากนั้นจะเล่นเสียงเฉลยให้อัตโนมัติ (วน loop ซ้ำจนกว่าจะกดหยุด)
                 </p>
 
                 {reciteCountdown !== null && (
-                  <div className="py-6 space-y-2 animate-pulse">
+                  <div className="py-6 space-y-3 animate-pulse">
                     <div className="text-4xl font-extrabold text-law-600">
                       {reciteCountdown}
                     </div>
                     <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                       🎙️ กำลังให้เวลาท่านท่องออกเสียง...
                     </div>
+                    <div>
+                      <button
+                        onClick={stopTTS}
+                        className="px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-950/50 dark:text-red-300 text-xs font-semibold rounded-lg transition inline-flex items-center gap-1.5"
+                      >
+                        <Square size={13} fill="currentColor" />
+                        <span>หยุดท่อง</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                {reciteCountdown === null && !revealed && (
-                  <button
-                    onClick={handleStartVoiceRecite}
-                    className="py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2 mx-auto"
-                  >
-                    <Play size={18} />
-                    <span>เริ่มฟังเสียงและฝึกท่อง</span>
-                  </button>
+                {reciteCountdown === null && (
+                  <>
+                    {isLooping ? (
+                      <button
+                        onClick={stopTTS}
+                        className="py-3 px-6 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2 mx-auto animate-pulse"
+                      >
+                        <Square size={18} fill="currentColor" />
+                        <span>หยุดการท่องวน loop</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStartVoiceRecite}
+                        className="py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2 mx-auto"
+                      >
+                        <Play size={18} />
+                        <span>เริ่มฟังเสียงและฝึกท่อง (วน loop)</span>
+                      </button>
+                    )}
+                  </>
                 )}
 
                 {revealed && (
