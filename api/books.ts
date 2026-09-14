@@ -96,6 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'id parameter is required' });
       }
 
+      await sql`DELETE FROM law_sections WHERE book_id = ${id};`;
       await sql`DELETE FROM law_books WHERE id = ${id};`;
       return res.status(200).json({ success: true, id });
     }
