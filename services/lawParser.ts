@@ -3,6 +3,7 @@ import { LawSection } from '../types';
 import { thaiToArabic, VALID_SUFFIXES } from '../utils/textUtils';
 
 export const parseLaws = (rawText: string, bookId: string, bookName: string): LawSection[] => {
+  if (!rawText || typeof rawText !== 'string') return [];
   const lines = rawText.split('\n');
   const laws: LawSection[] = [];
   
