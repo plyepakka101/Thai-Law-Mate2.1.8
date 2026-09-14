@@ -33,33 +33,36 @@ const postJson = async (url: string, body: unknown) => {
 export async function bootstrapNeonData(): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  const [booksResponse, lawsResponse, notesResponse] = await Promise.all([
+  const [booksResponse, tombstoneResponse, lawsResponse, notesResponse] = await Promise.all([
     fetch('/api/books'),
+    fetch('/api/books?includeDeleted=true'),
     fetch('/api/laws?limit=50000'),
     fetch('/api/notes')
   ]);
 
-  if (!booksResponse.ok || !lawsResponse.ok || !notesResponse.ok) {
+  if (!booksResponse.ok || !tombstoneResponse.ok || !lawsResponse.ok || !notesResponse.ok) {
     throw new Error(
-      `Neon bootstrap failed: books=${booksResponse.status}, laws=${lawsResponse.status}, notes=${notesResponse.status}`
+      `Neon bootstrap failed: books=${booksResponse.status}, tombstones=${tombstoneResponse.status}, laws=${lawsResponse.status}, notes=${notesResponse.status}`
     );
   }
 
   const remoteBooks = await booksResponse.json() as LawBook[];
+  const allKnownBooks = await tombstoneResponse.json() as { id: string; isDeleted: boolean }[];
   const remoteLaws = await lawsResponse.json() as LawSection[];
   const remoteNotes = await notesResponse.json() as Record<string, UserNote>;
 
-  const cloudBooks = remoteBooks
-    .filter(book => book.isCustom)
-    .map(book => ({ ...book, content: book.content || '' }));
+  const cloudBooks = remoteBooks.filter(book => book.isCustom);
   const cloudLaws = remoteLaws.filter(law => law.isCustom);
   const localBooks = readJson<LawBook[]>(CUSTOM_BOOKS_KEY, []);
   const localLaws = readJson<LawSection[]>(CUSTOM_LAWS_KEY, []);
   const localNotes = readJson<Record<string, UserNote>>(NOTES_KEY, {});
 
-  // Merge local-only records into the cloud first so unsynced data is not lost.
+  const knownBookIds = new Set(allKnownBooks.map(b => b.id));
+  const deletedBookIds = new Set(allKnownBooks.filter(b => b.isDeleted).map(b => b.id));
+
+  // Push up only books the server has NEVER seen before — never resurrect a tombstoned one.
   const cloudBookIds = new Set(cloudBooks.map(book => book.id));
-  const localOnlyBooks = localBooks.filter(book => !cloudBookIds.has(book.id));
+  const localOnlyBooks = localBooks.filter(book => !knownBookIds.has(book.id));
   if (localOnlyBooks.length) {
     await Promise.all(localOnlyBooks.map(book => postJson('/api/books', book)));
   }
@@ -70,10 +73,10 @@ export async function bootstrapNeonData(): Promise<void> {
     await postJson('/api/laws', localOnlyLaws);
   }
 
-  const mergedBooks = [...cloudBooks, ...localOnlyBooks];
-  const mergedLaws = [...cloudLaws, ...localOnlyLaws];
+  // Purge any book/section belonging to a book that's been tombstoned elsewhere.
+  const mergedBooks = [...cloudBooks, ...localOnlyBooks].filter(b => !deletedBookIds.has(b.id));
+  const mergedLaws = [...cloudLaws, ...localOnlyLaws].filter(l => !deletedBookIds.has(l.bookId));
 
-  // Neon is the shared source of truth after a successful fetch/sync.
   writeJson(CUSTOM_BOOKS_KEY, mergedBooks);
   writeJson(CUSTOM_LAWS_KEY, mergedLaws);
 
