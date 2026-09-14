@@ -89,6 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           last_updated = EXCLUDED.last_updated,
           content = EXCLUDED.content,
           is_custom = EXCLUDED.is_custom,
+          is_deleted = FALSE,
           updated_at = NOW();
       `;
       return res.status(200).json({ success: true, book });
@@ -101,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       await sql`DELETE FROM law_sections WHERE book_id = ${id};`;
-      await sql`DELETE FROM law_books WHERE id = ${id};`;
+      await sql`UPDATE law_books SET is_deleted = TRUE, updated_at = NOW() WHERE id = ${id};`;
       return res.status(200).json({ success: true, id });
     }
 
