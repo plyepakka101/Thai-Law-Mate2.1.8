@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowLeft, Volume2, VolumeX, Eye, EyeOff, CheckCircle2, 
-  RotateCcw, Sparkles, Zap, Flame, Award, ChevronRight,
+  RotateCcw, Sparkles, Zap, Flame, Award, ChevronRight, ChevronLeft,
   Pause, Play, HelpCircle, Square
 } from 'lucide-react';
 import { MemorizationItem, MemorizeStudyMode, ParagraphSlice, AppSettings } from '../types';
@@ -309,6 +309,13 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
     }
   };
 
+  // Browse articles without submitting a review.
+  const goToItem = (nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= total || nextIndex === currentIndex) return;
+    stopTTS();
+    setCurrentIndex(nextIndex);
+  };
+
   // Cloze answer selector
   const handleSelectCloze = (blankId: number, selectedWord: string) => {
     setUserAnswers(prev => ({ ...prev, [blankId]: selectedWord }));
@@ -330,13 +337,45 @@ export const MemorizePlayer: React.FC<Props> = ({ items, deckTitle, settings, on
             {deckTitle || 'ชุดท่องจำกฎหมาย'}
           </div>
           <div className="text-sm font-bold text-gray-800 dark:text-gray-200">
-            มาตรา {currentIndex + 1} / {total}
+            รายการ {currentIndex + 1} / {total}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-lg">
-          <Flame size={14} />
-          <span>จำต่อเนื่อง {currentItem.streak || 0} ครั้ง</span>
+        <div className="flex items-center gap-1.5">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-lg">
+            <Flame size={14} />
+            <span>ต่อเนื่อง {currentItem.streak || 0}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => goToItem(currentIndex - 1)}
+            disabled={currentIndex === 0}
+            aria-label="ไปมาตราก่อนหน้า"
+            title="มาตราก่อนหน้า"
+            className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={() => goToItem(currentIndex + 1)}
+            disabled={currentIndex === total - 1}
+            aria-label="ไปมาตราถัดไป"
+            title="มาตราถัดไป"
+            className="p-2 rounded-lg border border-law-200 dark:border-law-800 text-law-600 dark:text-law-300 hover:bg-law-50 dark:hover:bg-law-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 px-1 text-xs">
+        <button type="button" onClick={() => goToItem(currentIndex - 1)} disabled={currentIndex === 0} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition">
+          <ChevronLeft size={15} /> มาตราก่อนหน้า
+        </button>
+        <span className="text-gray-400 truncate">มาตรา {currentItem.sectionNumber}</span>
+        <button type="button" onClick={() => goToItem(currentIndex + 1)} disabled={currentIndex === total - 1} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-law-600 dark:text-law-300 hover:bg-white dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition">
+          มาตราถัดไป <ChevronRight size={15} />
+        </button>
       </div>
 
       {/* Progress Bar */}
