@@ -1,6 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
 
+const MAX_BOOK_ID_LENGTH = 64;
+const MAX_LAW_ID_LENGTH = 128;
+
 function getDb() {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) throw new Error('DATABASE_URL is not configured');
@@ -9,6 +12,20 @@ function getDb() {
 
 function isDbConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL);
+}
+
+function validateLawItem(item: any): string | null {
+  if (!item || !item.id) return 'แต่ละมาตราต้องมี id';
+  if (typeof item.id !== 'string' || item.id.length > MAX_LAW_ID_LENGTH) {
+    return `law.id ยาวเกินกำหนด (สูงสุด ${MAX_LAW_ID_LENGTH} ตัวอักษร)`;
+  }
+  const bookId = item.bookId || 'custom';
+  if (typeof bookId !== 'string' || bookId.length > MAX_BOOK_ID_LENGTH) {
+    return `bookId ยาวเกินกำหนด: ${typeof bookId === 'string' ? bookId.length : 0} ตัวอักษร (สูงสุด ${MAX_BOOK_ID_LENGTH})`;
+  }
+  if (item.sectionNumber == null) return 'แต่ละมาตราต้องมี sectionNumber';
+  if (item.content == null) return 'แต่ละมาตราต้องมี content';
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -80,15 +97,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST' || req.method === 'PUT') {
       const body = req.body;
-      if (!body) {
-        return res.status(400).json({ error: 'Request body required' });
-      }
+      if (!body) return res.status(400).json({ error: 'Request body required' });
 
-      // Support batch upsert
       if (Array.isArray(body)) {
+        for (let index = 0; index < body.length; index += 1) {
+          const item = body[index];
+          const validationError = validateLawItem(item);
+          if (validationError) {
+            return res.status(400).json({ error: `${validationError} (รายการที่ ${index + 1})` });
+          }
+        }
+
         for (const item of body) {
           const targetBookId = item.bookId || 'custom';
-          // Ensure parent book exists in law_books to satisfy foreign key constraint
           await sql`
             INSERT INTO law_books (id, name, abbreviation, description, is_custom)
             VALUES (${targetBookId}, ${targetBookId === 'custom' ? 'กฎหมายเพิ่มเติม' : targetBookId}, 'กำหนดเอง', 'กฎหมายกำหนดเอง', TRUE)
@@ -109,9 +130,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ success: true, count: body.length });
       }
 
-      // Single item upsert
+      const validationError = validateLawItem(body);
+      if (validationError) return res.status(400).json({ error: validationError });
+
       const targetBookId = body.bookId || 'custom';
-      // Ensure parent book exists in law_books to satisfy foreign key constraint
       await sql`
         INSERT INTO law_books (id, name, abbreviation, description, is_custom)
         VALUES (${targetBookId}, ${targetBookId === 'custom' ? 'กฎหมายเพิ่มเติม' : targetBookId}, 'กำหนดเอง', 'กฎหมายกำหนดเอง', TRUE)
@@ -133,10 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'DELETE') {
       const id = (req.query.id as string) || req.body?.id;
-      if (!id) {
-        return res.status(400).json({ error: 'id parameter is required' });
-      }
-
+      if (!id) return res.status(400).json({ error: 'id parameter is required' });
       await sql`DELETE FROM law_sections WHERE id = ${id};`;
       return res.status(200).json({ success: true, id });
     }
