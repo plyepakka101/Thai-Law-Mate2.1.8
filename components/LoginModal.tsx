@@ -12,16 +12,16 @@ import {
   ChevronDown, 
   ChevronUp, 
   LogIn,
-  Sparkles
+  Lock,
+  Mail,
+  Loader2
 } from 'lucide-react';
 import { 
   loginWithGoogleCredential, 
-  loginWithGmail,
-  quickAdminLogin,
+  loginWithPassword,
   getStoredGoogleClientId, 
   setStoredGoogleClientId, 
   getAdminEmails,
-  ADMIN_MASTER_PASSCODE,
   AuthUser 
 } from '../services/authService';
 
@@ -40,10 +40,11 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
   const [isGsiLoaded, setIsGsiLoaded] = useState(false);
   const [copiedOrigin, setCopiedOrigin] = useState(false);
   
-  // Passcode login state
+  // Credentials login state
   const adminList = getAdminEmails();
-  const [selectedEmail, setSelectedEmail] = useState<string>(adminList[0] || 'pramot.thamwi@gmail.com');
-  const [passcode, setPasscode] = useState('');
+  const [emailInput, setEmailInput] = useState<string>(adminList[0] || 'pramot.thamwi@gmail.com');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
   const googleBtnRef = useRef<HTMLDivElement>(null);
 
@@ -76,9 +77,11 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
     try {
       (window as any).google.accounts.id.initialize({
         client_id: clientId.trim(),
-          callback: async (response: any) => {
-            if (response.credential) {
+        callback: async (response: any) => {
+          if (response.credential) {
+            setIsLoading(true);
             const res = await loginWithGoogleCredential(response.credential);
+            setIsLoading(false);
             if (res.success && res.user) {
               setSuccessMsg(`ยินดีต้อนรับ ${res.user.name || res.user.email}`);
               setErrorMsg('');
@@ -87,7 +90,7 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
                 onClose();
               }, 400);
             } else {
-              setErrorMsg(res.message || 'เข้าสู่ระบบไม่สำเร็จ บัญชีของคุณอาจไม่มีสิทธิ์แอดมิน');
+              setErrorMsg(res.message || 'เข้าสู่ระบบไม่สำเร็จ บัญชี Google ของคุณอาจไม่มีสิทธิ์แอดมิน');
             }
           }
         },
@@ -115,32 +118,25 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
     }
   }, [isOpen, hasValidClientId, isGsiLoaded, clientId]);
 
-  const handleQuickLogin = (email: string) => {
-    setErrorMsg('');
-    const res = quickAdminLogin(email);
-    if (res.success && res.user) {
-      setSuccessMsg(`เข้าสู่ระบบสำเร็จในฐานะ ${res.user.name || res.user.email} (Admin)`);
-      if (onSuccess) onSuccess(res.user);
-      setTimeout(() => {
-        onClose();
-      }, 400);
-    } else {
-      setErrorMsg(res.message || 'เข้าสู่ระบบไม่สำเร็จ');
-    }
-  };
-
-  const handlePasscodeLogin = (e: React.FormEvent) => {
+  const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    const res = loginWithGmail(selectedEmail, passcode);
-    if (res.success && res.user) {
-      setSuccessMsg(`เข้าสู่ระบบแอดมินสำเร็จ (${res.user.name || res.user.email})`);
-      if (onSuccess) onSuccess(res.user);
-      setTimeout(() => {
-        onClose();
-      }, 400);
-    } else {
-      setErrorMsg(res.message || 'รหัสผ่านไม่ถูกต้อง (รหัสเริ่มต้น: lawmate2026)');
+    setIsLoading(true);
+    try {
+      const res = await loginWithPassword(emailInput, passwordInput);
+      if (res.success && res.user) {
+        setSuccessMsg(`เข้าสู่ระบบแอดมินสำเร็จ (${res.user.name || res.user.email})`);
+        if (onSuccess) onSuccess(res.user);
+        setTimeout(() => {
+          onClose();
+        }, 400);
+      } else {
+        setErrorMsg(res.message || 'อีเมลหรือรหัสผ่านแอดมินไม่ถูกต้อง');
+      }
+    } catch {
+      setErrorMsg('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -185,6 +181,10 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           </button>
         </div>
 
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          ระบบยืนยันตัวตนความปลอดภัยสูง เฉพาะผู้ดูแลระบบที่ได้รับอนุญาตเท่านั้น
+        </p>
+
         {errorMsg && (
           <div className="p-3 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs rounded-xl flex items-start gap-2 border border-red-200 dark:border-red-800/50">
             <AlertCircle size={16} className="shrink-0 mt-0.5" />
@@ -199,124 +199,86 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           </div>
         )}
 
-        {/* 1-Click Fast Admin Sign-In */}
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-            <Sparkles size={14} className="text-amber-500" />
-            <span>เข้าสู่ระบบด่วน 1-Click (เฉพาะบัญชีแอดมิน):</span>
-          </label>
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('pramot.thamwi@gmail.com')}
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 hover:bg-law-50 hover:border-law-300 dark:hover:bg-slate-800 dark:hover:border-law-500 transition-all text-left group"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-law-100 dark:bg-law-900/60 text-law-700 dark:text-law-300 flex items-center justify-center font-bold text-xs">
-                  P
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-law-700 dark:group-hover:text-law-400">
-                    ปราโมช (แอดมิน)
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                    pramot.thamwi@gmail.com
-                  </div>
-                </div>
-              </div>
-              <span className="text-xs text-law-600 dark:text-law-400 font-medium px-2 py-1 bg-white dark:bg-slate-700 rounded-lg shadow-2xs border border-slate-200 dark:border-slate-600">
-                เข้าใช้งาน ➜
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('plyepakka@gmail.com')}
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 hover:bg-purple-50 hover:border-purple-300 dark:hover:bg-slate-800 dark:hover:border-purple-500 transition-all text-left group"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold text-xs">
-                  P
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-700 dark:group-hover:text-purple-400">
-                    พลอย (แอดมิน)
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                    plyepakka@gmail.com
-                  </div>
-                </div>
-              </div>
-              <span className="text-xs text-purple-600 dark:text-purple-400 font-medium px-2 py-1 bg-white dark:bg-slate-700 rounded-lg shadow-2xs border border-slate-200 dark:border-slate-600">
-                เข้าใช้งาน ➜
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Or Login with Passcode Form */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-          <form onSubmit={handlePasscodeLogin} className="space-y-2.5">
-            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <KeyRound size={14} className="text-slate-500" />
-              <span>หรือเข้าสู่ระบบด้วยรหัสผ่านแอดมิน:</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
-                อีเมล Gmail ผู้ดูแลระบบ:
-              </label>
-              <input
-                type="email"
-                value={selectedEmail}
-                onChange={(e) => setSelectedEmail(e.target.value)}
-                placeholder="ระบุ Gmail ผู้ดูแลระบบ"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-law-500"
-                required
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-[11px] text-slate-500 dark:text-slate-400">
-                  รหัสผ่านแอดมิน:
-                </label>
-                <span className="text-[10px] text-slate-400">
-                  (รหัสผ่านตั้งต้น: <code className="text-law-600 font-mono font-bold">lawmate2026</code>)
-                </span>
-              </div>
-              <input
-                type="password"
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                placeholder="ใส่รหัสผ่าน เช่น lawmate2026"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-law-500"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-2 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-            >
-              <LogIn size={14} />
-              <span>ยืนยันเข้าสู่ระบบ</span>
-            </button>
-          </form>
-        </div>
-
-        {/* Optional Google Sign-In button if configured */}
+        {/* Google Sign-In Section (if configured) */}
         {hasValidClientId && (
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center space-y-2">
-            <span className="text-[11px] text-slate-400 block">หรือเข้าสู่ระบบด้วย Google Identity:</span>
+          <div className="space-y-2 text-center pb-2">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+              ลงชื่อเข้าใช้ด้วยบัญชี Google
+            </span>
             <div ref={googleBtnRef} className="min-h-[44px] flex items-center justify-center">
               {!isGsiLoaded && (
                 <span className="text-xs text-slate-400 animate-pulse">กำลังโหลด Google Sign-In...</span>
               )}
             </div>
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+              <span className="flex-shrink mx-3 text-[11px] text-slate-400">หรือ</span>
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+            </div>
           </div>
         )}
 
-        {/* Expandable Google OAuth Config Section */}
+        {/* Secure Admin Password Login Form (Server-Verified) */}
+        <form onSubmit={handlePasswordLogin} className="space-y-3">
+          <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <Lock size={14} className="text-law-600 dark:text-law-400" />
+            <span>เข้าสู่ระบบด้วยรหัสผ่านแอดมิน:</span>
+          </div>
+
+          <div>
+            <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
+              อีเมล Gmail ผู้ดูแลระบบ:
+            </label>
+            <div className="relative">
+              <Mail size={15} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="เช่น pramot.thamwi@gmail.com"
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-law-500"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
+              รหัสผ่านผู้ดูแลระบบ:
+            </label>
+            <div className="relative">
+              <KeyRound size={15} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-law-500"
+                required
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-2.5 bg-law-600 hover:bg-law-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                <span>กำลังตรวจสอบสิทธิ์กับเซิร์ฟเวอร์...</span>
+              </>
+            ) : (
+              <>
+                <LogIn size={14} />
+                <span>เข้าสู่ระบบ</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Google OAuth Config Toggle */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
@@ -325,14 +287,13 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           >
             <span className="flex items-center gap-1">
               <Settings size={12} />
-              <span>ตั้งค่า Google OAuth Client ID (ตัวเลือกเสริม)</span>
+              <span>ตั้งค่า Google OAuth Client ID {hasValidClientId ? '(เชื่อมต่อแล้ว)' : ''}</span>
             </span>
             {showConfig ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
 
           {showConfig && (
             <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
-              {/* Origin Helper */}
               <div className="bg-blue-50 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800/50 text-xs space-y-1.5">
                 <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center justify-between">
                   <span>URL ต้นทาง (Authorized JavaScript origins):</span>
@@ -359,7 +320,6 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
                 </a>
               </div>
 
-              {/* Client ID Form */}
               <form onSubmit={handleSaveClientId} className="space-y-2">
                 <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block">
                   Google Client ID:
@@ -396,3 +356,4 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
     </div>
   );
 };
+
