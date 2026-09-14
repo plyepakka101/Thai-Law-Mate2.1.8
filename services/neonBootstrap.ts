@@ -75,7 +75,9 @@ export async function bootstrapNeonData(): Promise<void> {
 
   // Purge any book/section belonging to a book that's been tombstoned elsewhere.
   const mergedBooks = [...cloudBooks, ...localOnlyBooks].filter(b => !deletedBookIds.has(b.id));
-  const mergedLaws = [...cloudLaws, ...localOnlyLaws].filter(l => !deletedBookIds.has(l.bookId));
+  const mergedLaws = [...cloudLaws, ...localOnlyLaws].filter(
+    l => !l.bookId || !deletedBookIds.has(l.bookId)
+  );
 
   writeJson(CUSTOM_BOOKS_KEY, mergedBooks);
   writeJson(CUSTOM_LAWS_KEY, mergedLaws);
