@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
+import { requireAdmin } from './_auth';
 
 const MAX_BOOK_ID_LENGTH = 64;
 const MAX_LAW_ID_LENGTH = 128;
@@ -53,6 +54,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'GET' && !requireAdmin(req, res)) return;
 
   if (!isDbConfigured()) {
     return res.status(200).json({ connected: false, message: 'DATABASE_URL is not configured in Vercel environment variables' });

@@ -56,9 +56,9 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
     try {
       (window as any).google.accounts.id.initialize({
         client_id: clientId.trim(),
-        callback: (response: any) => {
-          if (response.credential) {
-            const res = loginWithGoogleCredential(response.credential);
+          callback: async (response: any) => {
+            if (response.credential) {
+            const res = await loginWithGoogleCredential(response.credential);
             if (res.success && res.user) {
               setSuccessMsg(`ยินดีต้อนรับ ${res.user.name || res.user.email}`);
               setErrorMsg('');

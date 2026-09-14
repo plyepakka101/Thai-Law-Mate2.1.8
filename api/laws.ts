@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
+import { requireAdmin } from './_auth';
 
 const MAX_BOOK_ID_LENGTH = 64;
 const MAX_LAW_ID_LENGTH = 128;
@@ -37,6 +38,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+
+  if (req.method !== 'GET' && !requireAdmin(req, res)) return;
 
   if (!isDbConfigured()) {
     return res.status(503).json({ error: 'DATABASE_URL is not configured' });

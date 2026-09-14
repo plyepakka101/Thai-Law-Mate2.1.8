@@ -27,9 +27,6 @@ export const DEFAULT_ADMIN_EMAILS = [
   'plyepakka@gmail.com'
 ];
 
-// Admin master passcode fallback (allows instant login if OAuth client is not yet registered on Google Cloud Console)
-const ADMIN_MASTER_PASSCODE = 'lawmate2026';
-
 export const getAdminEmails = (): string[] => {
   try {
     const raw = localStorage.getItem(ADMIN_EMAILS_KEY);
@@ -95,73 +92,32 @@ export const decodeGoogleCredential = (credential: string): { email: string; nam
   }
 };
 
-export const loginWithGoogleCredential = (credential: string): { success: boolean; user?: AuthUser; message?: string } => {
-  const decoded = decodeGoogleCredential(credential);
-  if (!decoded || !decoded.email) {
-    return { success: false, message: 'ไม่สามารถอ่านข้อมูลจาก Google Token ได้' };
+export const loginWithGoogleCredential = async (credential: string): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
+  try {
+    const response = await fetch('/api/auth', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.user) return { success: false, message: data.error || 'เข้าสู่ระบบไม่สำเร็จ' };
+    const user: AuthUser = { ...data.user, loginTime: Date.now() };
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
+    return { success: true, user };
+  } catch {
+    return { success: false, message: 'เชื่อมต่อเซิร์ฟเวอร์ยืนยันตัวตนไม่ได้' };
   }
-
-  const cleanEmail = decoded.email.trim().toLowerCase();
-  const adminList = getAdminEmails().map(e => e.trim().toLowerCase());
-  const isAdmin = adminList.includes(cleanEmail);
-
-  const user: AuthUser = {
-    email: cleanEmail,
-    name: decoded.name,
-    picture: decoded.picture,
-    isAdmin,
-    loginTime: Date.now()
-  };
-
-  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
-
-  if (!isAdmin) {
-    return { 
-      success: false, 
-      user, 
-      message: `บัญชี ${cleanEmail} ไม่มีสิทธิ์ผู้ดูแลระบบ (Admin) กรุณาใช้ Gmail ที่ได้รับอนุญาต` 
-    };
-  }
-
-  return { success: true, user };
 };
 
 // Login with Gmail directly (with admin email validation or passcode verification)
 export const loginWithGmail = (email: string, passcode?: string): { success: boolean; user?: AuthUser; message?: string } => {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail || !cleanEmail.includes('@')) {
-    return { success: false, message: 'กรุณากรอกอีเมล Gmail ที่ถูกต้อง' };
-  }
-
-  const adminList = getAdminEmails().map(e => e.toLowerCase());
-  const isDesignatedAdmin = adminList.includes(cleanEmail);
-
-  // If passcode is provided, check against master passcode
-  if (passcode && passcode.trim() !== ADMIN_MASTER_PASSCODE && !isDesignatedAdmin) {
-    return { success: false, message: 'รหัสผ่านแอดมินไม่ถูกต้อง' };
-  }
-
-  if (!isDesignatedAdmin && passcode?.trim() !== ADMIN_MASTER_PASSCODE) {
-    return { 
-      success: false, 
-      message: `อีเมล ${cleanEmail} ไม่อยู่ในรายชื่อผู้ดูแลระบบ (Admin)` 
-    };
-  }
-
-  const user: AuthUser = {
-    email: cleanEmail,
-    name: cleanEmail.split('@')[0],
-    isAdmin: true,
-    loginTime: Date.now()
-  };
-
-  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
-  return { success: true, user };
+  return { success: false, message: 'การเข้าสู่ระบบด้วยรหัสผ่านถูกปิดเพื่อความปลอดภัย กรุณาใช้ Google Sign-In' };
 };
 
 export const logout = () => {
   localStorage.removeItem(AUTH_USER_KEY);
+  fetch('/api/auth', { method: 'DELETE', credentials: 'include' }).catch(() => {});
   window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
 };

@@ -60,9 +60,9 @@ export const AdminLoginGuard: React.FC<Props> = ({ children }) => {
     try {
       (window as any).google.accounts.id.initialize({
         client_id: clientId.trim(),
-        callback: (response: any) => {
+        callback: async (response: any) => {
           if (response.credential) {
-            const res = loginWithGoogleCredential(response.credential);
+            const res = await loginWithGoogleCredential(response.credential);
             if (res.success && res.user) {
               setUser(res.user);
               setErrorMsg('');
