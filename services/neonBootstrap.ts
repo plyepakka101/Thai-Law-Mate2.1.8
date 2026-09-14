@@ -49,7 +49,9 @@ export async function bootstrapNeonData(): Promise<void> {
   const remoteLaws = await lawsResponse.json() as LawSection[];
   const remoteNotes = await notesResponse.json() as Record<string, UserNote>;
 
-  const cloudBooks = remoteBooks.filter(book => book.isCustom);
+  const cloudBooks = remoteBooks
+    .filter(book => book.isCustom)
+    .map(book => ({ ...book, content: book.content || '' }));
   const cloudLaws = remoteLaws.filter(law => law.isCustom);
   const localBooks = readJson<LawBook[]>(CUSTOM_BOOKS_KEY, []);
   const localLaws = readJson<LawSection[]>(CUSTOM_LAWS_KEY, []);
