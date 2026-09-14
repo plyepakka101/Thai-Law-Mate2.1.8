@@ -33,13 +33,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const isCustomOnly = req.query.custom === 'true' || req.query.custom === '1';
+      const includeDeleted = req.query.includeDeleted === 'true' || req.query.includeDeleted === '1';
       let rows;
-      if (isCustomOnly) {
+      if (includeDeleted) {
+        rows = await sql`SELECT id, is_custom as "isCustom", is_deleted as "isDeleted" FROM law_books;`;
+      } else if (isCustomOnly) {
         rows = await sql`
           SELECT id, name, abbreviation, description, color, source_url as "sourceUrl", 
                  last_updated as "lastUpdated", content, is_custom as "isCustom", sort_order as "sortOrder"
           FROM law_books
-          WHERE is_custom = TRUE
+          WHERE is_custom = TRUE AND is_deleted = FALSE
           ORDER BY sort_order ASC, created_at ASC;
         `;
       } else {
@@ -47,6 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           SELECT id, name, abbreviation, description, color, source_url as "sourceUrl", 
                  last_updated as "lastUpdated", content, is_custom as "isCustom", sort_order as "sortOrder"
           FROM law_books
+          WHERE is_deleted = FALSE
           ORDER BY sort_order ASC, created_at ASC;
         `;
       }
