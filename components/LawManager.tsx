@@ -10,6 +10,14 @@ type ImportPreview = { name: string; abbreviation: string; content: string; laws
 
 const slugify = (value: string) => value.toLowerCase().replace(/[^a-z0-9ก-๙]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || `book-${Date.now()}`;
 
+/** Always keep generated IDs comfortably below Neon VARCHAR(64). */
+const createBookId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `custom-${crypto.randomUUID()}`;
+  }
+  return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 export const COLOR_OPTIONS = [
   { name: 'Red', value: 'bg-red-500', hex: '#ef4444' },
   { name: 'Blue', value: 'bg-blue-500', hex: '#3b82f6' },
@@ -88,7 +96,7 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
     const finalName = name.trim() || preview?.name || '';
     const finalContent = content.trim() || preview?.content || '';
     if (!finalName || !finalContent) { setMessage('กรุณาระบุชื่อกฎหมายและเนื้อหา'); return; }
-    const id = `custom-book-${slugify(finalName)}-${Date.now()}`;
+    const id = createBookId();
     setBusy(true);
     setMessage('กำลังบันทึกและอัปโหลดข้อมูลขึ้น Neon PostgreSQL...');
     try {
@@ -104,9 +112,11 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
         isCustom: true 
       });
       const laws = parseLaws(finalContent, book.id, book.name);
-      await saveCustomLawsBatch(laws);
+      const lawsSynced = await saveCustomLawsBatch(laws);
       onChanged();
-      setMessage(`บันทึก “${book.name}” แล้ว ${laws.length} มาตรา (อัปโหลดขึ้น Neon สำเร็จแล้ว)`);
+      setMessage(lawsSynced
+        ? `บันทึก “${book.name}” แล้ว ${laws.length} มาตรา (อัปโหลดขึ้น Neon สำเร็จแล้ว)`
+        : `บันทึก “${book.name}” ในเครื่องแล้ว แต่การอัปโหลดมาตราขึ้น Neon ไม่สำเร็จ`);
       clearForm();
     } catch (err) {
       setMessage(`บันทึกในเครื่องสำเร็จ แต่การเชื่อมต่อ Neon ล้มเหลว: ${err instanceof Error ? err.message : ''}`);
@@ -143,7 +153,6 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
           <input value={lastUpdated} onChange={e=>setLastUpdated(e.target.value)} placeholder="ข้อมูล ณ วันที่" className="p-3 rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"/>
           <input value={sourceUrl} onChange={e=>setSourceUrl(e.target.value)} placeholder="URL แหล่งข้อมูลทางการ (ถ้ามี)" className="p-3 rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 text-sm md:col-span-2"/>
           
-          {/* Color Picker (Similar to Deka Search) */}
           <div className="space-y-2 md:col-span-2 p-4 bg-gray-50 dark:bg-gray-750 rounded-xl border border-gray-100 dark:border-gray-700">
             <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
               <Palette size={16} className="text-law-600" />
@@ -153,33 +162,17 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
               {COLOR_OPTIONS.map(c => {
                 const isSelected = color === c.value;
                 return (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => setColor(c.value)}
-                    className={`w-8 h-8 rounded-full ${c.value} flex items-center justify-center transition-transform hover:scale-110 focus:outline-none ${isSelected ? 'ring-2 ring-offset-2 ring-law-500 shadow-md scale-105' : ''}`}
-                    title={c.name}
-                  >
+                  <button key={c.value} type="button" onClick={() => setColor(c.value)} className={`w-8 h-8 rounded-full ${c.value} flex items-center justify-center transition-transform hover:scale-110 focus:outline-none ${isSelected ? 'ring-2 ring-offset-2 ring-law-500 shadow-md scale-105' : ''}`} title={c.name}>
                     {isSelected && <Check className="w-4 h-4 text-white" />}
                   </button>
                 );
               })}
-              
               <div className="w-px h-8 bg-gray-300 dark:bg-gray-600 mx-1"></div>
-              
-              {/* Custom Color Picker Input */}
               <div className="relative flex items-center justify-center w-8 h-8 rounded-full overflow-hidden border border-gray-300 dark:border-gray-600 shadow-sm transition-transform hover:scale-110 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-law-500" title="เลือกสีอื่นๆ (กำหนดเอง)">
-                <input
-                  type="color"
-                  value={color.startsWith('#') ? color : '#3b82f6'}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="absolute inset-0 w-16 h-16 -top-2 -left-2 cursor-pointer border-0 p-0"
-                />
+                <input type="color" value={color.startsWith('#') ? color : '#3b82f6'} onChange={(e) => setColor(e.target.value)} className="absolute inset-0 w-16 h-16 -top-2 -left-2 cursor-pointer border-0 p-0" />
                 {color.startsWith('#') && <Check className="w-4 h-4 text-white absolute pointer-events-none drop-shadow-md" />}
               </div>
-              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                {color.startsWith('#') ? `สีกำหนดเอง: ${color}` : 'เลือกสีหลักหรือกดปุ่มเพื่อกำหนดรหัสสีเอง'}
-              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">{color.startsWith('#') ? `สีกำหนดเอง: ${color}` : 'เลือกสีหลักหรือกดปุ่มเพื่อกำหนดรหัสสีเอง'}</span>
             </div>
           </div>
         </div>
@@ -193,90 +186,27 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
         {message && <div className="mt-3 flex items-start gap-2 text-sm text-law-700 dark:text-law-300"><AlertCircle size={17} className="mt-0.5"/>{message}</div>}
         {preview && <div className="mt-4 rounded-xl bg-law-50 dark:bg-law-900/20 p-4"><b>ตัวอย่างก่อนบันทึก</b><div className="text-sm mt-1">{preview.name} · ตรวจพบ {preview.laws.length} มาตรา</div>{preview.laws.slice(0,5).map(l=><div key={l.id} className="text-xs mt-1">มาตรา {l.sectionNumber} — {l.content.slice(0,90)}{l.content.length>90?'…':''}</div>)}</div>}
         <div className="mt-5 flex gap-2">
-          <button onClick={handleSave} className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-law-600 text-white font-bold hover:bg-law-700 text-sm shadow-sm"><Save size={19}/> บันทึกกฎหมายทั้งเล่ม</button>
+          <button onClick={handleSave} disabled={busy} className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-law-600 text-white font-bold hover:bg-law-700 text-sm shadow-sm"><Save size={19}/> บันทึกกฎหมายทั้งเล่ม</button>
           <button onClick={clearForm} className="px-5 py-3 rounded-lg border dark:border-gray-600 text-sm">ล้าง</button>
         </div>
       </div>
 
-      {/* Book Management & Color Customization for All Books */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-2">
-            <Database size={20} className="text-law-600"/>
-            <h3 className="text-lg font-bold">กำหนดสีและจัดการเล่มกฎหมายในระบบ</h3>
-          </div>
-          <span className="text-xs text-gray-500">{books.length} เล่มทั้งหมด</span>
-        </div>
-
+        <div className="flex items-center justify-between gap-2 mb-4"><div className="flex items-center gap-2"><Database size={20} className="text-law-600"/><h3 className="text-lg font-bold">กำหนดสีและจัดการเล่มกฎหมายในระบบ</h3></div><span className="text-xs text-gray-500">{books.length} เล่มทั้งหมด</span></div>
         <div className="space-y-3">
           {books.map(book => {
             const isHex = book.color?.startsWith('#');
             const colorClass = isHex ? '' : (book.color || 'bg-gray-500');
             const colorStyle = isHex ? { backgroundColor: book.color } : {};
             const isEditingColor = editingColorBookId === book.id;
-
             return (
               <div key={book.id} className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div 
-                    className={`w-10 h-10 rounded-lg ${colorClass} text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0`}
-                    style={colorStyle}
-                  >
-                    {book.abbreviation.slice(0, 4)}
-                  </div>
-                  <div>
-                    <div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                      <span>{book.name}</span>
-                      {book.isCustom ? (
-                        <span className="px-2 py-0.5 text-[10px] bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded font-medium">เพิ่มเอง</span>
-                      ) : (
-                        <span className="px-2 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded font-medium">กฎหมายหลัก</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5">{book.abbreviation} · {book.description || 'ไม่มีคำอธิบาย'}</div>
-                  </div>
-                </div>
-
+                <div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-lg ${colorClass} text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0`} style={colorStyle}>{book.abbreviation.slice(0, 4)}</div><div><div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2"><span>{book.name}</span>{book.isCustom ? <span className="px-2 py-0.5 text-[10px] bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded font-medium">เพิ่มเอง</span> : <span className="px-2 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded font-medium">กฎหมายหลัก</span>}</div><div className="text-xs text-gray-500 mt-0.5">{book.abbreviation} · {book.description || 'ไม่มีคำอธิบาย'}</div></div></div>
                 <div className="flex items-center gap-2 self-end sm:self-center">
-                  {/* Color Selector Popover / Trigger */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setEditingColorBookId(isEditingColor ? null : book.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium"
-                    >
-                      <span className={`w-3.5 h-3.5 rounded-full ${colorClass}`} style={colorStyle}></span>
-                      <span>เปลี่ยนสี</span>
-                    </button>
-
-                    {isEditingColor && (
-                      <div className="absolute right-0 top-10 z-20 p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl flex flex-wrap gap-2 w-64 animate-in fade-in zoom-in duration-150">
-                        <div className="text-xs font-bold text-gray-500 dark:text-gray-300 w-full mb-1">เลือกสีใหม่สำหรับ {book.abbreviation}</div>
-                        {COLOR_OPTIONS.map(c => (
-                          <button
-                            key={c.value}
-                            onClick={() => handleChangeBookColor(book.id, c.value)}
-                            className={`w-6 h-6 rounded-full ${c.value} hover:scale-110 transition-transform ${book.color === c.value ? 'ring-2 ring-offset-1 ring-law-500' : ''}`}
-                            title={c.name}
-                          />
-                        ))}
-                        <div className="w-full flex items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-600 mt-1">
-                          <label className="text-[11px] text-gray-500 dark:text-gray-300">สีกำหนดเอง:</label>
-                          <input
-                            type="color"
-                            value={isHex ? book.color : '#3b82f6'}
-                            onChange={(e) => handleChangeBookColor(book.id, e.target.value)}
-                            className="w-6 h-6 rounded cursor-pointer border-0 p-0"
-                          />
-                        </div>
-                      </div>
-                    )}
+                  <div className="relative"><button onClick={() => setEditingColorBookId(isEditingColor ? null : book.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium"><span className={`w-3.5 h-3.5 rounded-full ${colorClass}`} style={colorStyle}></span><span>เปลี่ยนสี</span></button>
+                    {isEditingColor && <div className="absolute right-0 top-10 z-20 p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl flex flex-wrap gap-2 w-64 animate-in fade-in zoom-in duration-150"><div className="text-xs font-bold text-gray-500 dark:text-gray-300 w-full mb-1">เลือกสีใหม่สำหรับ {book.abbreviation}</div>{COLOR_OPTIONS.map(c => <button key={c.value} onClick={() => handleChangeBookColor(book.id, c.value)} className={`w-6 h-6 rounded-full ${c.value} hover:scale-110 transition-transform ${book.color === c.value ? 'ring-2 ring-offset-1 ring-law-500' : ''}`} title={c.name} />)}<div className="w-full flex items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-600 mt-1"><label className="text-[11px] text-gray-500 dark:text-gray-300">สีกำหนดเอง:</label><input type="color" value={isHex ? book.color : '#3b82f6'} onChange={(e) => handleChangeBookColor(book.id, e.target.value)} className="w-6 h-6 rounded cursor-pointer border-0 p-0" /></div></div>}
                   </div>
-
-                  {book.isCustom && (
-                    <button onClick={()=>removeBook(book.id, book.name)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="ลบเล่มนี้">
-                      <Trash2 size={16}/>
-                    </button>
-                  )}
+                  {book.isCustom && <button onClick={()=>removeBook(book.id, book.name)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="ลบเล่มนี้"><Trash2 size={16}/></button>}
                 </div>
               </div>
             );
@@ -284,10 +214,7 @@ export const LawManager: React.FC<Props> = ({ books, onChanged }) => {
         </div>
       </div>
 
-      <div className="bg-gray-50 dark:bg-gray-900/40 rounded-xl p-4 text-xs text-gray-500 flex gap-2">
-        <FileText size={16} className="shrink-0"/>
-        <span>TXT/HTML ใช้ตัวแยก “มาตรา …” ของ Thai-Law-Mate ส่วน JSON รองรับไฟล์สำรอง V3 และข้อมูลกฎหมายแบบ array</span>
-      </div>
+      <div className="bg-gray-50 dark:bg-gray-900/40 rounded-xl p-4 text-xs text-gray-500 flex gap-2"><FileText size={16} className="shrink-0"/><span>TXT/HTML ใช้ตัวแยก “มาตรา …” ของ Thai-Law-Mate ส่วน JSON รองรับไฟล์สำรอง V3 และข้อมูลกฎหมายแบบ array</span></div>
     </div>
   );
 };
