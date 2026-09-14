@@ -1,6 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
 
+const MAX_BOOK_ID_LENGTH = 64;
+const MAX_ABBREVIATION_LENGTH = 64;
+
 function getDb() {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) throw new Error('DATABASE_URL is not configured');
@@ -54,6 +57,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const book = req.body;
       if (!book || !book.id || !book.name) {
         return res.status(400).json({ error: 'id and name are required' });
+      }
+
+      if (typeof book.id !== 'string' || book.id.length > MAX_BOOK_ID_LENGTH) {
+        return res.status(400).json({
+          error: `book.id ยาวเกินกำหนด: ${typeof book.id === 'string' ? book.id.length : 0} ตัวอักษร (สูงสุด ${MAX_BOOK_ID_LENGTH})`
+        });
+      }
+
+      if (book.abbreviation != null && String(book.abbreviation).length > MAX_ABBREVIATION_LENGTH) {
+        return res.status(400).json({
+          error: `abbreviation ยาวเกินกำหนด (สูงสุด ${MAX_ABBREVIATION_LENGTH} ตัวอักษร)`
+        });
       }
 
       await sql`
