@@ -1,6 +1,80 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
-import { requireAdmin } from './_auth.ts';
+import { createHmac, timingSafeEqual } from 'crypto';
+
+const DEFAULT_ADMIN_EMAILS = [
+  'pramot.thamwi@gmail.com',
+  'plyepakka@gmail.com',
+];
+
+function isAdminEmail(email: string): boolean {
+  if (!email) return false;
+  const cleanEmail = email.trim().toLowerCase();
+  const raw = (process.env.ADMIN_EMAILS || '').trim();
+  let list: string[] = [];
+  try {
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        list = parsed.map((v: unknown) => String(v).trim().toLowerCase().replace(/^["']|["']$/g, ''));
+      }
+    }
+  } catch {}
+  if (list.length === 0 && raw) {
+    list = raw
+      .replace(/[\[\]"']/g, '')
+      .split(/[,;\n\s]+/)
+      .map((v: string) => v.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  const adminList = Array.from(new Set([...DEFAULT_ADMIN_EMAILS, ...list]));
+  return adminList.includes(cleanEmail);
+}
+
+function requireAdmin(req: VercelRequest, res: VercelResponse) {
+  try {
+    const secret = (process.env.AUTH_SESSION_SECRET || '').trim().replace(/^["']|["']$/g, '');
+    if (!secret || secret.length < 32) {
+      res.status(503).json({ error: 'AUTH_SESSION_SECRET is not configured' });
+      return null;
+    }
+    const cookieHeader = req.headers.cookie || '';
+    const cookieList = cookieHeader.split(';').map((s: string) => s.trim());
+    const cookieEntry = cookieList.find(
+      (s: string) => s.startsWith('tlm_session=') || s.startsWith('__Host-tlm_session=')
+    );
+    if (!cookieEntry) {
+      res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนใช้งาน' });
+      return null;
+    }
+    const raw = cookieEntry.slice(cookieEntry.indexOf('=') + 1);
+    const [encoded, providedSignature] = (raw || '').split('.');
+    if (!encoded || !providedSignature) {
+      res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนใช้งาน' });
+      return null;
+    }
+    const expected = createHmac('sha256', secret).update(encoded).digest('base64url');
+    const a = Buffer.from(providedSignature);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      res.status(401).json({ error: 'Session ไม่ถูกต้อง' });
+      return null;
+    }
+    const session = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!session?.email || session.isAdmin !== true || (session.exp && session.exp <= Math.floor(Date.now() / 1000))) {
+      res.status(401).json({ error: 'Session หมดอายุ' });
+      return null;
+    }
+    if (!isAdminEmail(session.email)) {
+      res.status(403).json({ error: 'บัญชีนี้ไม่มีสิทธิ์ผู้ดูแลระบบ' });
+      return null;
+    }
+    return session;
+  } catch {
+    res.status(401).json({ error: 'การตรวจสอบสิทธิ์ล้มเหลว' });
+    return null;
+  }
+}
 
 const MAX_BOOK_ID_LENGTH = 64;
 const MAX_ABBREVIATION_LENGTH = 64;
