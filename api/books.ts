@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
-import { requireAdmin } from './_auth';
+import { requireAdmin } from './_auth.ts';
 
 const MAX_BOOK_ID_LENGTH = 64;
 const MAX_ABBREVIATION_LENGTH = 64;

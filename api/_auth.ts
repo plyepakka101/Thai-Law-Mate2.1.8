@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const COOKIE_NAME = '__Host-tlm_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
@@ -10,7 +10,7 @@ const base64Url = (value: string) => Buffer.from(value).toString('base64url');
 const fromBase64Url = (value: string) => Buffer.from(value, 'base64url').toString('utf8');
 
 function secret() {
-  const value = process.env.AUTH_SESSION_SECRET;
+  const value = (process.env.AUTH_SESSION_SECRET || '').trim().replace(/^["']|["']$/g, '');
   if (!value || value.length < 32) {
     throw new Error('AUTH_SESSION_SECRET must be configured and at least 32 characters');
   }
@@ -80,7 +80,7 @@ export async function verifyGoogleCredential(
 ): Promise<{ email: string; name: string; picture?: string } | null> {
   if (!credential) return null;
 
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
   if (!clientId) return null;
 
   try {
@@ -123,12 +123,25 @@ export const DEFAULT_ADMIN_EMAILS = [
 ];
 
 export function isAdminEmail(email: string) {
-  const configured = (process.env.ADMIN_EMAILS || '')
-    .split(',')
-    .map((v: string) => v.trim().toLowerCase())
-    .filter(Boolean);
+  const raw = (process.env.ADMIN_EMAILS || '').trim();
+  let list: string[] = [];
+  try {
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        list = parsed.map((v: unknown) => String(v).trim().toLowerCase().replace(/^["']|["']$/g, ''));
+      }
+    }
+  } catch {}
+  if (list.length === 0 && raw) {
+    list = raw
+      .replace(/[\[\]"']/g, '')
+      .split(/[,;\n\s]+/)
+      .map((v: string) => v.trim().toLowerCase())
+      .filter(Boolean);
+  }
 
-  const adminList = configured.length > 0 ? configured : DEFAULT_ADMIN_EMAILS;
+  const adminList = list.length > 0 ? Array.from(new Set([...DEFAULT_ADMIN_EMAILS, ...list])) : DEFAULT_ADMIN_EMAILS;
   return adminList.includes(email.trim().toLowerCase());
 }
 
