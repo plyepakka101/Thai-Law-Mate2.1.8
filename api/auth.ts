@@ -19,6 +19,11 @@ function passwordsMatch(provided: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+function sessionConfigurationReady(): boolean {
+  const secret = process.env.AUTH_SESSION_SECRET?.trim();
+  return Boolean(secret && secret.length >= 32);
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -42,6 +47,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // A signed session is required after every successful login.
+  // Return a clear configuration error instead of an unhandled 500 when
+  // AUTH_SESSION_SECRET has not yet been configured in Vercel.
+  if (!sessionConfigurationReady()) {
+    return res.status(503).json({
+      error: 'ระบบยืนยันตัวตนของเซิร์ฟเวอร์ยังไม่ได้ตั้งค่า AUTH_SESSION_SECRET ใน Vercel',
+    });
+  }
+
   // 1. Google Identity Services: the ID token must be issued for this app's client ID
   // and the Google account must be on the server-side admin allowlist.
   if (req.body?.credential) {
@@ -51,11 +65,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const user = { ...googleUser, isAdmin: true as const };
-    setSessionCookie(res, user);
+    try {
+      setSessionCookie(res, user);
+    } catch (error) {
+      console.error('Google session creation failed:', error);
+      return res.status(503).json({ error: 'เซิร์ฟเวอร์ไม่สามารถสร้าง Session ได้ กรุณาตรวจสอบการตั้งค่า Vercel' });
+    }
     return res.status(200).json({ user });
   }
 
-  // 2. Optional password login. Password is NEVER stored in source code.
+  // 2. Password login. Password is NEVER stored in source code.
   const body = req.body || {};
   const cleanEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   const password = typeof body.password === 'string' ? body.password : '';
@@ -76,6 +95,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     isAdmin: true as const,
   };
 
-  setSessionCookie(res, user);
+  try {
+    setSessionCookie(res, user);
+  } catch (error) {
+    console.error('Password session creation failed:', error);
+    return res.status(503).json({ error: 'เซิร์ฟเวอร์ไม่สามารถสร้าง Session ได้ กรุณาตรวจสอบการตั้งค่า Vercel' });
+  }
+
   return res.status(200).json({ user });
 }
