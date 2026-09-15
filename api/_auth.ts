@@ -25,8 +25,8 @@ function cookieValue(req: VercelRequest) {
   const cookies = req.headers.cookie || '';
   return cookies
     .split(';')
-    .map(v => v.trim())
-    .find(v => v.startsWith(`${COOKIE_NAME}=`))
+    .map((v: string) => v.trim())
+    .find((v: string) => v.startsWith(`${COOKIE_NAME}=`))
     ?.slice(COOKIE_NAME.length + 1);
 }
 
@@ -125,7 +125,7 @@ export const DEFAULT_ADMIN_EMAILS = [
 export function isAdminEmail(email: string) {
   const configured = (process.env.ADMIN_EMAILS || '')
     .split(',')
-    .map(v => v.trim().toLowerCase())
+    .map((v: string) => v.trim().toLowerCase())
     .filter(Boolean);
 
   const adminList = configured.length > 0 ? configured : DEFAULT_ADMIN_EMAILS;
