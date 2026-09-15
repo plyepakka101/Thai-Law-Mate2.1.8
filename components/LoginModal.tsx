@@ -5,12 +5,7 @@ import {
   AlertCircle, 
   CheckCircle2, 
   KeyRound, 
-  Settings, 
-  Copy, 
-  ExternalLink, 
   ShieldCheck, 
-  ChevronDown, 
-  ChevronUp, 
   LogIn,
   Lock,
   Mail,
@@ -19,8 +14,7 @@ import {
 import { 
   loginWithGoogleCredential, 
   loginWithPassword,
-  getStoredGoogleClientId, 
-  setStoredGoogleClientId, 
+  getGoogleClientId, 
   getAdminEmails,
   AuthUser 
 } from '../services/authService';
@@ -32,13 +26,12 @@ interface Props {
 }
 
 export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
-  const [clientId, setClientId] = useState<string>(getStoredGoogleClientId());
+  // Google Client ID is configured only through Vercel's VITE_GOOGLE_CLIENT_ID env var —
+  // intentionally not editable from the browser (matches AdminLoginGuard's approach).
+  const clientId = getGoogleClientId();
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [showConfig, setShowConfig] = useState(false);
-  const [inputClientId, setInputClientId] = useState(clientId);
   const [isGsiLoaded, setIsGsiLoaded] = useState(false);
-  const [copiedOrigin, setCopiedOrigin] = useState(false);
   
   // Credentials login state
   const adminList = getAdminEmails();
@@ -47,10 +40,6 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   
   const googleBtnRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setClientId(getStoredGoogleClientId());
-  }, [isOpen]);
 
   useEffect(() => {
     const checkGsi = () => {
@@ -138,26 +127,6 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSaveClientId = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleaned = inputClientId.trim();
-    if (!cleaned || !cleaned.includes('.apps.googleusercontent.com')) {
-      setErrorMsg('Google Client ID ต้องลงท้ายด้วย .apps.googleusercontent.com');
-      return;
-    }
-    setStoredGoogleClientId(cleaned);
-    setClientId(cleaned);
-    setShowConfig(false);
-    setErrorMsg('');
-  };
-
-  const handleCopyOrigin = () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://thai-law-mate2-1-8.vercel.app';
-    navigator.clipboard.writeText(origin);
-    setCopiedOrigin(true);
-    setTimeout(() => setCopiedOrigin(false), 2000);
   };
 
   if (!isOpen) return null;
@@ -277,80 +246,6 @@ export const LoginModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
             )}
           </button>
         </form>
-
-        {/* Google OAuth Config Toggle */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => setShowConfig(!showConfig)}
-            className="w-full flex items-center justify-between text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 py-1"
-          >
-            <span className="flex items-center gap-1">
-              <Settings size={12} />
-              <span>ตั้งค่า Google OAuth Client ID {hasValidClientId ? '(เชื่อมต่อแล้ว)' : ''}</span>
-            </span>
-            {showConfig ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-
-          {showConfig && (
-            <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
-              <div className="bg-blue-50 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800/50 text-xs space-y-1.5">
-                <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center justify-between">
-                  <span>URL ต้นทาง (Authorized JavaScript origins):</span>
-                </div>
-                <div className="flex items-center justify-between bg-white dark:bg-slate-800 px-2 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 font-mono text-[11px] text-blue-800 dark:text-blue-300">
-                  <span className="truncate">{typeof window !== 'undefined' ? window.location.origin : 'https://thai-law-mate2-1-8.vercel.app'}</span>
-                  <button
-                    type="button"
-                    onClick={handleCopyOrigin}
-                    className="ml-2 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-sans flex items-center gap-1 shrink-0"
-                  >
-                    <Copy size={10} />
-                    <span>{copiedOrigin ? 'คัดลอกแล้ว!' : 'คัดลอก'}</span>
-                  </button>
-                </div>
-                <a
-                  href="https://console.cloud.google.com/apis/credentials"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium pt-0.5"
-                >
-                  <span>เปิดหน้า Credentials ใน Google Cloud Console</span>
-                  <ExternalLink size={11} />
-                </a>
-              </div>
-
-              <form onSubmit={handleSaveClientId} className="space-y-2">
-                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block">
-                  Google Client ID:
-                </label>
-                <input
-                  type="text"
-                  value={inputClientId}
-                  onChange={(e) => setInputClientId(e.target.value)}
-                  placeholder="xxxx.apps.googleusercontent.com"
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-law-500"
-                  required
-                />
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowConfig(false)}
-                    className="px-3 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
-                  >
-                    ปิด
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-3 py-1 text-xs bg-law-600 hover:bg-law-700 text-white font-medium rounded-md"
-                  >
-                    บันทึก Client ID
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-        </div>
 
       </div>
     </div>
