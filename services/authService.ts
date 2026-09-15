@@ -9,42 +9,21 @@ export interface AuthUser {
 }
 
 const AUTH_USER_KEY = 'thai_law_mate_auth_user';
-const ADMIN_EMAILS_KEY = 'thai_law_mate_admin_emails';
-const GOOGLE_CLIENT_ID_KEY = 'thai_law_mate_google_client_id';
-
-export const getStoredGoogleClientId = (): string => {
-  return localStorage.getItem(GOOGLE_CLIENT_ID_KEY) || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-};
-
-export const setStoredGoogleClientId = (clientId: string) => {
-  localStorage.setItem(GOOGLE_CLIENT_ID_KEY, clientId.trim());
-  window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
-};
 
 export const DEFAULT_ADMIN_EMAILS = [
   'pramot.thamwi@gmail.com',
   'plyepakka@gmail.com'
 ];
 
-export const getAdminEmails = (): string[] => {
-  try {
-    const raw = localStorage.getItem(ADMIN_EMAILS_KEY);
-    if (!raw) return DEFAULT_ADMIN_EMAILS;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? Array.from(new Set([...DEFAULT_ADMIN_EMAILS, ...parsed])) : DEFAULT_ADMIN_EMAILS;
-  } catch {
-    return DEFAULT_ADMIN_EMAILS;
-  }
+// Google Client ID is configured only through Vercel's VITE_GOOGLE_CLIENT_ID.
+// It is intentionally not editable from the browser.
+export const getGoogleClientId = (): string => {
+  return String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 };
 
-export const addAdminEmail = (email: string) => {
-  const current = getAdminEmails();
-  const lower = email.trim().toLowerCase();
-  if (!current.includes(lower)) {
-    current.push(lower);
-    localStorage.setItem(ADMIN_EMAILS_KEY, JSON.stringify(current));
-  }
-};
+// Kept for compatibility with existing code. Admin authorization is server-side.
+export const getAdminEmails = (): string[] => DEFAULT_ADMIN_EMAILS;
+export const addAdminEmail = (_email: string) => {};
 
 export const getCurrentUser = (): AuthUser | null => {
   try {
@@ -56,52 +35,27 @@ export const getCurrentUser = (): AuthUser | null => {
   }
 };
 
-export const isUserAdmin = (user: AuthUser | null): boolean => {
-  if (!user || !user.email) return false;
-  if (user.isAdmin === true) return true;
-  const adminList = getAdminEmails().map(e => e.trim().toLowerCase());
-  return adminList.includes(user.email.trim().toLowerCase());
-};
-
-export const decodeGoogleCredential = (credential: string): { email: string; name: string; picture?: string } | null => {
-  try {
-    const payloadPart = credential.split('.')[1];
-    if (!payloadPart) return null;
-    let base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = base64.length % 4;
-    if (pad) base64 += '='.repeat(4 - pad);
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    const decoded = JSON.parse(jsonPayload);
-    return {
-      email: decoded.email || '',
-      name: decoded.name || (decoded.email ? decoded.email.split('@')[0] : ''),
-      picture: decoded.picture
-    };
-  } catch (err) {
-    console.error('Failed to decode Google token:', err);
-    return null;
-  }
-};
-
 export const getServerSession = async (): Promise<AuthUser | null> => {
   try {
     const response = await fetch('/api/auth', {
       method: 'GET',
       credentials: 'include',
-      cache: 'no-store'
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
     });
     if (!response.ok) return null;
     const data = await response.json().catch(() => ({}));
-    if (!data.user) return null;
+    if (!data.user || data.user.isAdmin !== true || !data.user.email) return null;
     return { ...data.user, loginTime: Date.now() } as AuthUser;
   } catch {
     return null;
   }
+};
+
+export const isUserAdmin = (user: AuthUser | null): boolean => {
+  if (!user?.email || user.isAdmin !== true) return false;
+  const email = user.email.trim().toLowerCase();
+  return DEFAULT_ADMIN_EMAILS.includes(email);
 };
 
 export const loginWithGoogleCredential = async (credential: string): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
@@ -113,7 +67,9 @@ export const loginWithGoogleCredential = async (credential: string): Promise<{ s
       body: JSON.stringify({ credential })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.user) return { success: false, message: data.error || 'เข้าสู่ระบบไม่สำเร็จ' };
+    if (!response.ok || !data.user) {
+      return { success: false, message: data.error || 'เข้าสู่ระบบ Google ไม่สำเร็จ' };
+    }
     const user: AuthUser = { ...data.user, loginTime: Date.now() };
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
     window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
