@@ -21,7 +21,6 @@ export const setStoredGoogleClientId = (clientId: string) => {
   window.dispatchEvent(new Event('thai_law_mate_auth_changed'));
 };
 
-// Default Admin Emails (matching Deka Search project)
 export const DEFAULT_ADMIN_EMAILS = [
   'pramot.thamwi@gmail.com',
   'plyepakka@gmail.com'
@@ -64,16 +63,13 @@ export const isUserAdmin = (user: AuthUser | null): boolean => {
   return adminList.includes(user.email.trim().toLowerCase());
 };
 
-// Parse Google JWT Token
 export const decodeGoogleCredential = (credential: string): { email: string; name: string; picture?: string } | null => {
   try {
     const payloadPart = credential.split('.')[1];
     if (!payloadPart) return null;
     let base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
     const pad = base64.length % 4;
-    if (pad) {
-      base64 += '='.repeat(4 - pad);
-    }
+    if (pad) base64 += '='.repeat(4 - pad);
     const jsonPayload = decodeURIComponent(
       atob(base64)
         .split('')
@@ -88,6 +84,22 @@ export const decodeGoogleCredential = (credential: string): { email: string; nam
     };
   } catch (err) {
     console.error('Failed to decode Google token:', err);
+    return null;
+  }
+};
+
+export const getServerSession = async (): Promise<AuthUser | null> => {
+  try {
+    const response = await fetch('/api/auth', {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => ({}));
+    if (!data.user) return null;
+    return { ...data.user, loginTime: Date.now() } as AuthUser;
+  } catch {
     return null;
   }
 };
@@ -111,7 +123,6 @@ export const loginWithGoogleCredential = async (credential: string): Promise<{ s
   }
 };
 
-// Login with Admin Email & Password (verified strictly by server-side /api/auth)
 export const loginWithPassword = async (email: string, password: string): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
   const cleanEmail = email.trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -126,7 +137,7 @@ export const loginWithPassword = async (email: string, password: string): Promis
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cleanEmail, password: password.trim() })
+      body: JSON.stringify({ email: cleanEmail, password })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.user) {
