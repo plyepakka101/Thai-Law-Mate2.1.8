@@ -2,13 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vitejs.dev/config/
+// Icons are stored in the repository root /icons directory.
+// Use it as Vite's public directory so the PNG files are copied to dist unchanged.
 export default defineConfig({
+  publicDir: 'icons',
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // Remove includeAssets regarding local files since we use CDN
       manifest: {
         name: 'Thai Law Mate',
         short_name: 'Thai Law Mate',
@@ -19,7 +20,13 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'https://cdn-icons-png.flaticon.com/512/5931/5931321.png',
+            src: '/icon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
@@ -37,7 +44,7 @@ export default defineConfig({
               cacheName: 'google-fonts-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // <== 365 days
+                maxAgeSeconds: 60 * 60 * 24 * 365
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -51,7 +58,7 @@ export default defineConfig({
               cacheName: 'gstatic-fonts-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // <== 365 days
+                maxAgeSeconds: 60 * 60 * 24 * 365
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -63,20 +70,6 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'tailwind-cdn-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // <== 30 days
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-           {
-            urlPattern: /^https:\/\/cdn-icons-png\.flaticon\.com.*/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'icon-cache',
               expiration: {
                 maxEntries: 10,
                 maxAgeSeconds: 60 * 60 * 24 * 30
